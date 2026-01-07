@@ -504,31 +504,47 @@ serve(async (req) => {
     
     console.log('✅ Código de serviço validado:', codigoServico, '- Tamanho:', codigoServico.length, 'dígitos');
     
-    // 🔥 CORREÇÃO E0160: Ajustar código NBS para serviço de manutenção automotiva
-    // Código NBS correto para manutenção automotiva: 116010100 (9 dígitos)
+    // 🔥 CORREÇÃO E0316: Código NBS deve estar na tabela oficial da Focus NFe
+    // Lista de códigos NBS válidos para serviços automotivos
+    const codigosNBSValidos = {
+      '1160101': 'Manutenção e reparação mecânica de veículos automotores',
+      '1160102': 'Manutenção e reparação elétrica de veículos automotores',
+      '1160103': 'Manutenção e reparação de suspensão, direção e freios',
+      '1160104': 'Reparação de câmaras de ar e pneumáticos',
+      '1160105': 'Serviços de lavagem, polimento e similares',
+      '1160199': 'Outras atividades de manutenção e reparação de veículos',
+      '116010100': 'Serviço de manutenção automotiva (9 dígitos)',
+      '116010101': 'Manutenção mecânica (9 dígitos)',
+      '116010102': 'Manutenção elétrica (9 dígitos)',
+    };
+    
     let codigoNBSFinal = (firstService.nbs_code || '').toString().replace(/\D/g, '');
     
-    console.log('🔍 ===== VALIDANDO CÓDIGO NBS =====');
-    console.log('📋 Código NBS original:', codigoNBSFinal);
+    console.log('🔍 ===== VALIDANDO CÓDIGO NBS (E0316) =====');
+    console.log('📋 Código NBS cadastrado:', codigoNBSFinal);
     
-    // Se o código NBS não for válido ou não tiver 9 dígitos, usar o padrão
-    if (!codigoNBSFinal || codigoNBSFinal.length < 7 || codigoNBSFinal.length > 9) {
-      codigoNBSFinal = '116010100'; // Código padrão para manutenção automotiva (9 dígitos)
-      console.log('⚠️ Código NBS inválido ou não informado');
-      console.log('✅ Usando código NBS padrão para manutenção automotiva:', codigoNBSFinal);
-    } else if (codigoNBSFinal.length === 7) {
-      // Se tiver 7 dígitos, completar com zeros à direita para ter 9 dígitos
-      codigoNBSFinal = codigoNBSFinal.padEnd(9, '0');
-      console.log('✅ Código NBS ajustado de 7 para 9 dígitos:', codigoNBSFinal);
-    } else if (codigoNBSFinal.length === 8) {
-      // Se tiver 8 dígitos, completar com zero à direita para ter 9 dígitos
-      codigoNBSFinal = codigoNBSFinal.padEnd(9, '0');
-      console.log('✅ Código NBS ajustado de 8 para 9 dígitos:', codigoNBSFinal);
+    // Verificar se o código tem 7 ou 9 dígitos
+    if (codigoNBSFinal.length === 7) {
+      console.log('✅ Código NBS com 7 dígitos - formato válido');
+    } else if (codigoNBSFinal.length === 9) {
+      console.log('✅ Código NBS com 9 dígitos - formato válido');
     } else {
-      console.log('✅ Código NBS válido:', codigoNBSFinal);
+      console.log('⚠️ Código NBS com tamanho inválido:', codigoNBSFinal.length, 'dígitos');
+      // Usar código padrão mais comum (7 dígitos)
+      codigoNBSFinal = '1160101';
+      console.log('✅ Usando código NBS padrão (manutenção mecânica):', codigoNBSFinal);
     }
     
-    console.log('✅ Código NBS final:', codigoNBSFinal);
+    // Verificar se está na lista de códigos válidos
+    if (codigosNBSValidos[codigoNBSFinal]) {
+      console.log('✅ Código NBS reconhecido:', codigosNBSValidos[codigoNBSFinal]);
+    } else {
+      console.log('⚠️ Código NBS não reconhecido, usando padrão');
+      codigoNBSFinal = '1160101'; // Código mais comum para manutenção automotiva
+      console.log('✅ Código NBS ajustado para:', codigoNBSFinal);
+    }
+    
+    console.log('✅ Código NBS final:', codigoNBSFinal, '(' + codigoNBSFinal.length + ' dígitos)');
     console.log('===== FIM DA VALIDAÇÃO NBS =====');
     
     const aliquotaIss = parseFloat(firstService.issqn_aliquota || '0');
@@ -1032,6 +1048,79 @@ serve(async (req) => {
       .eq('id', serviceOrderId);
 
     console.log('✅ Status atualizado para: processando_autorizacao');
+    
+    // 🔥 NOVO: Aguardar 3 segundos e consultar o status para pegar erros imediatamente
+    console.log('⏱️  Aguardando 3 segundos para consultar status...');
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    try {
+      console.log('🔍 Consultando status da NFS-e na Focus NFe...');
+      const statusResponse = await fetch(`${focusUrl}/v2/nfse/${ref}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${authToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const statusData = await statusResponse.json();
+      console.log('📥 Resposta da consulta:', JSON.stringify(statusData, null, 2));
+      
+      // Verificar se tem erros
+      let errorDetected = false;
+      let errorMsg = '';
+      let errorCd = '';
+      
+      if (statusData.erros && Array.isArray(statusData.erros) && statusData.erros.length > 0) {
+        errorDetected = true;
+        errorMsg = statusData.erros.map((e: any) => {
+          const codigo = e.Codigo || e.codigo || '';
+          const descricao = e.Descricao || e.descricao || '';
+          return codigo ? `[${codigo}] ${descricao}` : descricao;
+        }).join('\n');
+        errorCd = statusData.erros[0]?.Codigo || statusData.erros[0]?.codigo || '';
+      } else if (statusData.status === 'erro_autorizacao') {
+        errorDetected = true;
+        errorMsg = statusData.mensagem_sefaz || 'Erro ao autorizar NFS-e';
+        errorCd = 'ERRO_AUTORIZACAO';
+      }
+      
+      if (errorDetected) {
+        console.log('❌ ERRO DETECTADO NA CONSULTA:', errorMsg);
+        
+        // Atualizar com o erro
+        await supabase
+          .from('service_orders')
+          .update({
+            invoice_status: 'erro_autorizacao',
+            invoice_error: errorMsg,
+            invoice_error_code: errorCd,
+            invoice_updated_at: new Date().toISOString(),
+          })
+          .eq('id', serviceOrderId);
+        
+        console.log('💾 Erro salvo no banco de dados');
+        
+        // Retornar erro imediatamente
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: errorMsg,
+            errorCode: errorCd,
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 400,
+          }
+        );
+      }
+      
+      console.log('✅ Nenhum erro detectado na consulta');
+    } catch (consultError: any) {
+      console.error('⚠️ Erro ao consultar status (não crítico):', consultError.message);
+      // Não retornar erro, pois o webhook vai atualizar depois
+    }
+    
     console.log('🚀 ===== FIM DA REQUISIÇÃO (SUCESSO) =====');
 
     return new Response(
