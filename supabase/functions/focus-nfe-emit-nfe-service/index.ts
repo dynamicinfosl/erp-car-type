@@ -429,10 +429,12 @@ serve(async (req) => {
     // Calcular valores
     const totalAmount = parseFloat(order.final_amount || order.total_amount) || 0;
     const discount = parseFloat(order.discount) || 0;
+    const valorBaseCalculo = totalAmount - discount;
 
     console.log('💰 Valores calculados:', {
-      total: totalAmount,
-      desconto: discount,
+      valor_total: totalAmount,
+      deducoes: discount,
+      base_calculo: valorBaseCalculo,
     });
 
     // Preparar descrição dos serviços
@@ -476,25 +478,31 @@ serve(async (req) => {
       issqn_aliquota: firstService.issqn_aliquota,
     });
     
-    // 🔥 CORREÇÃO: Garantir que o código tenha EXATAMENTE 6 dígitos
-    const codigoServicoCompleto = (firstService.codigo_servico_municipal || '').toString().replace(/\D/g, '');
+    // 🔥 CORREÇÃO CRÍTICA: Código deve ter 4 ou 5 dígitos (conforme LC 116/2003 e Focus NFe)
+    const codigoServico = (firstService.codigo_servico_municipal || '').toString().replace(/\D/g, '');
     
-    let codigoServico = codigoServicoCompleto;
+    console.log('🔍 Validando código de serviço:', {
+      codigo_original: firstService.codigo_servico_municipal,
+      codigo_limpo: codigoServico,
+      tamanho: codigoServico.length,
+    });
     
-    // Se tiver menos de 6 dígitos, completar com zeros à direita
-    if (codigoServico.length < 6) {
-      codigoServico = codigoServico.padEnd(6, '0');
-      console.log(`✅ Código ajustado de ${codigoServicoCompleto.length} para 6 dígitos: ${codigoServicoCompleto} → ${codigoServico}`);
-    } 
-    // Se tiver mais de 6 dígitos, pegar apenas os primeiros 6
-    else if (codigoServico.length > 6) {
-      codigoServico = codigoServico.substring(0, 6);
-      console.log(`✅ Código truncado de ${codigoServicoCompleto.length} para 6 dígitos: ${codigoServicoCompleto} → ${codigoServico}`);
-    } else {
-      console.log(`✅ Código já tem 6 dígitos: ${codigoServico}`);
+    // Validar se tem 4 ou 5 dígitos (conforme LC 116/2003)
+    if (codigoServico.length < 4 || codigoServico.length > 5) {
+      console.error('❌ VALIDAÇÃO FALHOU: Código de serviço deve ter 4 ou 5 dígitos');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `Código de serviço inválido: "${firstService.codigo_servico_municipal || 'não informado'}".\n\nO código deve ter 4 ou 5 dígitos conforme LC 116/2003.\n\nExemplos corretos:\n• 0101 (4 dígitos) - Análise de sistemas\n• 1401 (4 dígitos) - Manutenção e reparação\n• 14.01 (será convertido para 1401)\n\nCódigo atual: "${codigoServico}" (${codigoServico.length} dígitos)\n\nConfigure em: Serviços > Editar Serviço > Dados Fiscais > Código de Serviço Municipal`,
+        }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 400,
+        }
+      );
     }
     
-    console.log('✅ Código final (item_lista_servico):', codigoServico, '- Tamanho:', codigoServico.length, 'dígitos');
+    console.log('✅ Código de serviço validado:', codigoServico, '- Tamanho:', codigoServico.length, 'dígitos');
     
     // 🔥 CORREÇÃO E0160: Ajustar código NBS para serviço de manutenção automotiva
     // Código NBS correto para manutenção automotiva: 116010100 (9 dígitos)
@@ -524,11 +532,13 @@ serve(async (req) => {
     console.log('===== FIM DA VALIDAÇÃO NBS =====');
     
     const aliquotaIss = parseFloat(firstService.issqn_aliquota || '0');
-    const valorIss = aliquotaIss > 0 ? (totalAmount * (aliquotaIss / 100)) : 0;
+    // 🔥 CORREÇÃO: ISS deve ser calculado sobre o valor base (total - deduções)
+    const valorIss = aliquotaIss > 0 ? (valorBaseCalculo * (aliquotaIss / 100)) : 0;
 
     console.log('💰 ISS calculado:', {
+      base_calculo: valorBaseCalculo,
       aliquota: aliquotaIss,
-      valor: valorIss,
+      valor_iss: valorIss,
     });
 
     // Gerar referência única
@@ -608,8 +618,6 @@ serve(async (req) => {
       prestador: {
         cnpj: settings.cnpj.replace(/\D/g, ''),
         codigo_municipio: settings.city_code || '',
-        optante_simples_nacional: optanteSimplesNacional,
-        incentivo_fiscal: incentivoFiscal,
       },
       
       tomador: {
@@ -628,26 +636,48 @@ serve(async (req) => {
     console.log('✅ Estrutura base da NFS-e criada');
     console.log('✅ Campo iss_retido definido:', nfseData.servico.iss_retido);
 
-    // 🔥 CORREÇÃO E0160: Para Simples Nacional, NÃO enviar regime_especial_tributacao
-    // A NFSe Nacional do Rio de Janeiro rejeita quando:
-    // - opSimpNac = 1 (Simples Nacional)
-    // - regEspTrib é enviado (qualquer valor)
-    // Solução: Apenas enviar optante_simples_nacional = true, SEM enviar regime_especial_tributacao
+    // 🔥 CORREÇÃO E0160: Configuração correta do regime tributário
+    console.log('🔍 ===== CONFIGURANDO REGIME TRIBUTÁRIO =====');
+    console.log('📋 Configurações:', {
+      optante_simples_nacional: optanteSimplesNacional,
+      regime_especial_tributacao: regimeEspecialTributacao,
+      incentivo_fiscal: incentivoFiscal,
+    });
+    
     if (optanteSimplesNacional) {
-      // ✅ Para Simples Nacional, NÃO enviar regime_especial_tributacao
-      // Apenas optante_simples_nacional = true já é suficiente
-      console.log('✅ Simples Nacional: NÃO enviando regime_especial_tributacao');
-      console.log('✅ Apenas optante_simples_nacional = true será enviado');
-      console.log('📋 Regra NFSe Nacional RJ: opSimpNac = 1, regEspTrib = 0 (não enviar)');
-    } else if (regimeEspecialTributacao >= 1 && regimeEspecialTributacao <= 6) {
-      // Se NÃO for Simples Nacional, só adiciona se tiver um valor válido (1-6)
-      nfseData.prestador.regime_especial_tributacao = regimeEspecialTributacao;
-      console.log('✅ Regime especial de tributação adicionado:', regimeEspecialTributacao);
+      // ✅ Para Simples Nacional
+      nfseData.prestador.optante_simples_nacional = true;
+      console.log('✅ Simples Nacional configurado: optante_simples_nacional = true');
+      
+      // ⚠️ IMPORTANTE: NÃO enviar regime_especial_tributacao para Simples Nacional
+      // A NFSe Nacional rejeita se enviar ambos
+      console.log('✅ NÃO enviando regime_especial_tributacao (incompatível com Simples Nacional)');
     } else {
-      console.log('⚠️ Regime especial de tributação NÃO será enviado (valor inválido ou 0)');
+      // ✅ Para Regime Normal
+      nfseData.prestador.optante_simples_nacional = false;
+      console.log('✅ Regime Normal configurado: optante_simples_nacional = false');
+      
+      // Adicionar regime especial se configurado (1-6)
+      if (regimeEspecialTributacao >= 1 && regimeEspecialTributacao <= 6) {
+        nfseData.prestador.regime_especial_tributacao = regimeEspecialTributacao;
+        console.log('✅ Regime especial de tributação adicionado:', regimeEspecialTributacao);
+      } else {
+        console.log('⚠️ Regime especial de tributação NÃO configurado (valor inválido ou 0)');
+      }
     }
-
+    
+    // Adicionar incentivo fiscal (opcional)
+    if (incentivoFiscal === true) {
+      nfseData.prestador.incentivo_fiscal = true;
+      console.log('✅ Incentivo fiscal: true');
+    } else {
+      nfseData.prestador.incentivo_fiscal = false;
+      console.log('✅ Incentivo fiscal: false');
+    }
+    
     console.log('✅ Campos fiscais OBRIGATÓRIOS adicionados ao prestador');
+    console.log('📋 Prestador configurado:', JSON.stringify(nfseData.prestador, null, 2));
+    console.log('===== FIM DA CONFIGURAÇÃO =====');
 
     // Adicionar Inscrição Municipal se disponível
     if (settings.inscricao_municipal && settings.inscricao_municipal.trim() !== '') {
