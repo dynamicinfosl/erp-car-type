@@ -1,5 +1,6 @@
 import React, { lazy } from 'react';
-import { RouteObject, Navigate } from 'react-router-dom';
+import type { RouteObject } from 'react-router';
+import { Navigate } from 'react-router-dom';
 
 const Login = lazy(() => import('../pages/auth/login'));
 const Register = lazy(() => import('../pages/auth/register'));
