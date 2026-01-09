@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../../components/layout/Sidebar';
@@ -64,6 +64,48 @@ export default function Reports() {
     start: new Intl.DateTimeFormat('en-CA').format(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
     end: new Intl.DateTimeFormat('en-CA').format(new Date()),
   });
+
+  // UI: Datas em DD/MM/AAAA (sem depender do formato do navegador)
+  const isoToBR = (iso: string) => {
+    const [y, m, d] = (iso || '').split('-');
+    if (!y || !m || !d) return '';
+    return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+  };
+
+  const isValidISODate = (iso: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+    const [y, m, d] = iso.split('-').map(Number);
+    const dt = new Date(`${iso}T00:00:00`);
+    return dt.getFullYear() === y && dt.getMonth() + 1 === m && dt.getDate() === d;
+  };
+
+  const brToISO = (br: string) => {
+    const digits = (br || '').replace(/\D/g, '').slice(0, 8);
+    if (digits.length !== 8) return null;
+    const d = digits.slice(0, 2);
+    const m = digits.slice(2, 4);
+    const y = digits.slice(4, 8);
+    const iso = `${y}-${m}-${d}`;
+    return isValidISODate(iso) ? iso : null;
+  };
+
+  const maskBRDate = (value: string) => {
+    const digits = (value || '').replace(/\D/g, '').slice(0, 8);
+    const d = digits.slice(0, 2);
+    const m = digits.slice(2, 4);
+    const y = digits.slice(4, 8);
+    if (digits.length <= 2) return d;
+    if (digits.length <= 4) return `${d}/${m}`;
+    return `${d}/${m}/${y}`;
+  };
+
+  const [dateInput, setDateInput] = useState(() => ({
+    start: isoToBR(new Intl.DateTimeFormat('en-CA').format(new Date(new Date().getFullYear(), new Date().getMonth(), 1))),
+    end: isoToBR(new Intl.DateTimeFormat('en-CA').format(new Date())),
+  }));
+
+  const startPickerRef = useRef<HTMLInputElement | null>(null);
+  const endPickerRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     loadReports();
@@ -284,23 +326,93 @@ export default function Reports() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Data Inicial
                 </label>
-                <input
-                  type="date"
-                  value={dateRange.start}
-                  onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={dateInput.start}
+                    onChange={(e) => {
+                      const masked = maskBRDate(e.target.value);
+                      setDateInput((prev) => ({ ...prev, start: masked }));
+                      const iso = brToISO(masked);
+                      if (iso) setDateRange((prev) => ({ ...prev, start: iso }));
+                    }}
+                    placeholder="DD/MM/AAAA"
+                    className="px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent w-[170px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = startPickerRef.current as any;
+                      if (!el) return;
+                      if (typeof el.showPicker === 'function') el.showPicker();
+                      else el.click();
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-teal-600 cursor-pointer"
+                    title="Selecionar data"
+                  >
+                    <i className="ri-calendar-line text-lg"></i>
+                  </button>
+                  <input
+                    ref={startPickerRef}
+                    type="date"
+                    value={dateRange.start}
+                    onChange={(e) => {
+                      const iso = e.target.value;
+                      setDateRange((prev) => ({ ...prev, start: iso }));
+                      setDateInput((prev) => ({ ...prev, start: isoToBR(iso) }));
+                    }}
+                    className="absolute inset-0 opacity-0 pointer-events-none"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Data Final
                 </label>
-                <input
-                  type="date"
-                  value={dateRange.end}
-                  onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={dateInput.end}
+                    onChange={(e) => {
+                      const masked = maskBRDate(e.target.value);
+                      setDateInput((prev) => ({ ...prev, end: masked }));
+                      const iso = brToISO(masked);
+                      if (iso) setDateRange((prev) => ({ ...prev, end: iso }));
+                    }}
+                    placeholder="DD/MM/AAAA"
+                    className="px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent w-[170px]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = endPickerRef.current as any;
+                      if (!el) return;
+                      if (typeof el.showPicker === 'function') el.showPicker();
+                      else el.click();
+                    }}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-teal-600 cursor-pointer"
+                    title="Selecionar data"
+                  >
+                    <i className="ri-calendar-line text-lg"></i>
+                  </button>
+                  <input
+                    ref={endPickerRef}
+                    type="date"
+                    value={dateRange.end}
+                    onChange={(e) => {
+                      const iso = e.target.value;
+                      setDateRange((prev) => ({ ...prev, end: iso }));
+                      setDateInput((prev) => ({ ...prev, end: isoToBR(iso) }));
+                    }}
+                    className="absolute inset-0 opacity-0 pointer-events-none"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+                </div>
               </div>
               <button
                 onClick={loadReports}
