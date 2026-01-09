@@ -68,7 +68,8 @@ export default defineConfig({
   base,
   build: {
     sourcemap: true,
-    outDir: "out",
+    // Vercel (Vite framework) expects `dist/` by default.
+    outDir: "dist",
   },
   resolve: {
     alias: {
