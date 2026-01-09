@@ -29,9 +29,40 @@ export default function Reports() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [reportData, setReportData] = useState<ReportData | null>(null);
+
+  const formatBRL = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+
+  const formatCount = (value: number) => new Intl.NumberFormat('pt-BR').format(Number(value || 0));
+
+  const formatPaymentMethod = (method: string) => {
+    const normalized = (method || '').toLowerCase();
+    const map: Record<string, string> = {
+      dinheiro: 'Dinheiro',
+      pix: 'PIX',
+      'cartao_credito': 'Cartão de Crédito',
+      'cartao_debito': 'Cartão de Débito',
+      'cartão de crédito': 'Cartão de Crédito',
+      'cartão de débito': 'Cartão de Débito',
+      transferencia: 'Transferência',
+      transferência: 'Transferência',
+      multiplo: 'Múltiplo',
+      outros: 'Outros',
+    };
+    if (map[normalized]) return map[normalized];
+    // fallback: replace underscores and capitalize words
+    return normalized
+      .replace(/_/g, ' ')
+      .split(' ')
+      .filter(Boolean)
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+  };
+
   const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0],
+    // Avoid UTC issues when using toISOString() (can shift date depending on timezone)
+    start: new Intl.DateTimeFormat('en-CA').format(new Date(new Date().getFullYear(), new Date().getMonth(), 1)),
+    end: new Intl.DateTimeFormat('en-CA').format(new Date()),
   });
 
   useEffect(() => {
@@ -42,8 +73,9 @@ export default function Reports() {
     try {
       setLoading(true);
 
-      const startDate = new Date(dateRange.start).toISOString();
-      const endDate = new Date(dateRange.end + 'T23:59:59').toISOString();
+      // Build inclusive local date range (avoids timezone shifting)
+      const startDate = new Date(`${dateRange.start}T00:00:00`).toISOString();
+      const endDate = new Date(`${dateRange.end}T23:59:59.999`).toISOString();
 
       // Buscar receitas
       const { data: revenues, error: revenuesError } = await supabase
@@ -287,50 +319,50 @@ export default function Reports() {
           ) : reportData ? (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium text-gray-600">Receitas</h3>
-                    <i className="ri-arrow-up-line text-green-600 text-xl"></i>
+                    <i className="ri-arrow-up-line text-teal-600 text-xl"></i>
                   </div>
                   <p className="text-2xl font-bold text-gray-900">
-                    R$ {reportData.revenues.total.toFixed(2)}
+                    {formatBRL(reportData.revenues.total)}
                   </p>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium text-gray-600">Despesas</h3>
-                    <i className="ri-arrow-down-line text-red-600 text-xl"></i>
+                    <i className="ri-arrow-down-line text-rose-600 text-xl"></i>
                   </div>
                   <p className="text-2xl font-bold text-gray-900">
-                    R$ {reportData.expenses.total.toFixed(2)}
+                    {formatBRL(reportData.expenses.total)}
                   </p>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium text-gray-600">Lucro</h3>
                     <i className={`ri-money-dollar-circle-line text-xl ${
-                      reportData.profit >= 0 ? 'text-green-600' : 'text-red-600'
+                      reportData.profit >= 0 ? 'text-teal-600' : 'text-rose-600'
                     }`}></i>
                   </div>
                   <p className={`text-2xl font-bold ${
-                    reportData.profit >= 0 ? 'text-green-600' : 'text-red-600'
+                    reportData.profit >= 0 ? 'text-teal-600' : 'text-rose-600'
                   }`}>
-                    R$ {reportData.profit.toFixed(2)}
+                    {formatBRL(reportData.profit)}
                   </p>
                 </div>
 
-                <div className="bg-white rounded-xl shadow-sm p-6">
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-medium text-gray-600">Vendas</h3>
                     <i className="ri-shopping-cart-line text-teal-600 text-xl"></i>
                   </div>
                   <p className="text-2xl font-bold text-gray-900">
-                    {reportData.sales.count}
+                    {formatCount(reportData.sales.count)}
                   </p>
                   <p className="text-sm text-gray-600 mt-1">
-                    R$ {reportData.sales.total.toFixed(2)}
+                    {formatBRL(reportData.sales.total)}
                   </p>
                 </div>
               </div>
@@ -356,42 +388,50 @@ export default function Reports() {
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     Vendas por Forma de Pagamento
                   </h3>
-                  <div className="space-y-3">
-                    {reportData.sales.byPaymentMethod.map((item: any) => (
-                      <div key={item.method} className="flex justify-between items-center">
-                        <div>
-                          <p className="font-medium text-gray-900 capitalize">{item.method}</p>
-                          <p className="text-sm text-gray-600">{item.count} vendas</p>
+                  {reportData.sales.byPaymentMethod.length > 0 ? (
+                    <div className="space-y-3">
+                      {reportData.sales.byPaymentMethod.map((item: any) => (
+                        <div key={item.method} className="flex justify-between items-center">
+                          <div>
+                            <p className="font-medium text-gray-900">{formatPaymentMethod(item.method)}</p>
+                            <p className="text-sm text-gray-600">{formatCount(item.count)} vendas</p>
+                          </div>
+                          <p className="font-semibold text-gray-900">
+                            {formatBRL(item.total)}
+                          </p>
                         </div>
-                        <p className="font-semibold text-gray-900">
-                          R$ {item.total.toFixed(2)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Nenhuma venda no período selecionado.</p>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     Ordens de Serviço por Status
                   </h3>
-                  <div className="space-y-3">
-                    {reportData.serviceOrders.byStatus.map((item: any) => (
-                      <div key={item.status} className="flex justify-between items-center">
-                        <p className="font-medium text-gray-900">{getStatusLabel(item.status)}</p>
-                        <p className="font-semibold text-gray-900">{item.count}</p>
-                      </div>
-                    ))}
-                  </div>
+                  {reportData.serviceOrders.byStatus.length > 0 ? (
+                    <div className="space-y-3">
+                      {reportData.serviceOrders.byStatus.map((item: any) => (
+                        <div key={item.status} className="flex justify-between items-center">
+                          <p className="font-medium text-gray-900">{getStatusLabel(item.status)}</p>
+                          <p className="font-semibold text-gray-900">{formatCount(item.count)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Nenhuma OS no período selecionado.</p>
+                  )}
                   <div className="mt-4 pt-4 border-t border-gray-200">
                     <div className="flex justify-between items-center">
                       <p className="font-semibold text-gray-900">Total de OS</p>
-                      <p className="font-bold text-teal-600">{reportData.serviceOrders.count}</p>
+                      <p className="font-bold text-teal-600">{formatCount(reportData.serviceOrders.count)}</p>
                     </div>
                     <div className="flex justify-between items-center mt-2">
                       <p className="text-sm text-gray-600">Valor Total</p>
                       <p className="font-semibold text-gray-900">
-                        R$ {reportData.serviceOrders.total.toFixed(2)}
+                        {formatBRL(reportData.serviceOrders.total)}
                       </p>
                     </div>
                   </div>
@@ -401,32 +441,40 @@ export default function Reports() {
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     Receitas por Categoria
                   </h3>
-                  <div className="space-y-3">
-                    {reportData.revenues.byCategory.map((item: any) => (
-                      <div key={item.category} className="flex justify-between items-center">
-                        <p className="font-medium text-gray-900">{getCategoryLabel(item.category)}</p>
-                        <p className="font-semibold text-green-600">
-                          R$ {item.total.toFixed(2)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  {reportData.revenues.byCategory.length > 0 ? (
+                    <div className="space-y-3">
+                      {reportData.revenues.byCategory.map((item: any) => (
+                        <div key={item.category} className="flex justify-between items-center">
+                          <p className="font-medium text-gray-900">{getCategoryLabel(item.category)}</p>
+                          <p className="font-semibold text-teal-700">
+                            {formatBRL(item.total)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Nenhuma receita no período selecionado.</p>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     Despesas por Categoria
                   </h3>
-                  <div className="space-y-3">
-                    {reportData.expenses.byCategory.map((item: any) => (
-                      <div key={item.category} className="flex justify-between items-center">
-                        <p className="font-medium text-gray-900">{getCategoryLabel(item.category)}</p>
-                        <p className="font-semibold text-red-600">
-                          R$ {item.total.toFixed(2)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                  {reportData.expenses.byCategory.length > 0 ? (
+                    <div className="space-y-3">
+                      {reportData.expenses.byCategory.map((item: any) => (
+                        <div key={item.category} className="flex justify-between items-center">
+                          <p className="font-medium text-gray-900">{getCategoryLabel(item.category)}</p>
+                          <p className="font-semibold text-rose-700">
+                            {formatBRL(item.total)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Nenhuma despesa no período selecionado.</p>
+                  )}
                 </div>
               </div>
             </div>

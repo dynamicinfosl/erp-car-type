@@ -32,15 +32,20 @@ export default function ProductSalesReport() {
   const [detailedSales, setDetailedSales] = useState<DetailedSale[]>([]);
   const [showDetailed, setShowDetailed] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<string | null>(null);
+
+  const formatBRL = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
+
+  const formatCount = (value: number) => new Intl.NumberFormat('pt-BR').format(Number(value || 0));
   
   const [startDate, setStartDate] = useState(() => {
     const date = new Date();
     date.setDate(1); // Primeiro dia do mês
-    return date.toISOString().split('T')[0];
+    return new Intl.DateTimeFormat('en-CA').format(date);
   });
   
   const [endDate, setEndDate] = useState(() => {
-    return new Date().toISOString().split('T')[0];
+    return new Intl.DateTimeFormat('en-CA').format(new Date());
   });
 
   const [filterCategory, setFilterCategory] = useState('all');
@@ -368,8 +373,8 @@ export default function ProductSalesReport() {
                     <p className="text-sm text-gray-600">Total Vendido</p>
                     <i className="ri-shopping-bag-line text-2xl text-blue-600"></i>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">R$ {totals.sales.toFixed(2)}</p>
-                  <p className="text-xs text-gray-500 mt-1">{totals.quantity} unidades</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatBRL(totals.sales)}</p>
+                  <p className="text-xs text-gray-500 mt-1">{formatCount(totals.quantity)} unidades</p>
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm p-6">
@@ -377,7 +382,7 @@ export default function ProductSalesReport() {
                     <p className="text-sm text-gray-600">Custo Total</p>
                     <i className="ri-price-tag-3-line text-2xl text-orange-600"></i>
                   </div>
-                  <p className="text-2xl font-bold text-gray-900">R$ {totals.cost.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatBRL(totals.cost)}</p>
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm p-6">
@@ -385,7 +390,7 @@ export default function ProductSalesReport() {
                     <p className="text-sm text-gray-600">Lucro Total</p>
                     <i className="ri-money-dollar-circle-line text-2xl text-green-600"></i>
                   </div>
-                  <p className="text-2xl font-bold text-green-600">R$ {totals.profit.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-teal-600">{formatBRL(totals.profit)}</p>
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm p-6">
@@ -426,9 +431,9 @@ export default function ProductSalesReport() {
                             </td>
                             <td className="px-6 py-4 text-sm text-gray-600">{getCategoryLabel(sale.category)}</td>
                             <td className="px-6 py-4 text-center text-sm font-medium text-gray-900">{sale.total_quantity}</td>
-                            <td className="px-6 py-4 text-right text-sm text-gray-600">R$ {sale.average_cost.toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right text-sm font-semibold text-gray-900">R$ {sale.total_sales.toFixed(2)}</td>
-                            <td className="px-6 py-4 text-right text-sm font-semibold text-green-600">R$ {sale.total_profit.toFixed(2)}</td>
+                            <td className="px-6 py-4 text-right text-sm text-gray-600">{formatBRL(sale.average_cost)}</td>
+                            <td className="px-6 py-4 text-right text-sm font-semibold text-gray-900">{formatBRL(sale.total_sales)}</td>
+                            <td className="px-6 py-4 text-right text-sm font-semibold text-teal-700">{formatBRL(sale.total_profit)}</td>
                             <td className="px-6 py-4 text-right">
                               <span className={`text-sm font-semibold ${
                                 sale.profit_margin > 30 ? 'text-green-600' : 
@@ -507,10 +512,10 @@ export default function ProductSalesReport() {
                           <td className="px-6 py-4 text-sm font-mono text-gray-900">{sale.order_id}</td>
                           <td className="px-6 py-4 text-sm text-gray-900">{sale.customer_name}</td>
                           <td className="px-6 py-4 text-center text-sm font-medium text-gray-900">{sale.quantity}</td>
-                          <td className="px-6 py-4 text-right text-sm text-gray-600">R$ {sale.cost_price.toFixed(2)}</td>
-                          <td className="px-6 py-4 text-right text-sm text-gray-900">R$ {sale.unit_price.toFixed(2)}</td>
-                          <td className="px-6 py-4 text-right text-sm font-semibold text-gray-900">R$ {sale.total_sale.toFixed(2)}</td>
-                          <td className="px-6 py-4 text-right text-sm font-semibold text-green-600">R$ {sale.profit.toFixed(2)}</td>
+                          <td className="px-6 py-4 text-right text-sm text-gray-600">{formatBRL(sale.cost_price)}</td>
+                          <td className="px-6 py-4 text-right text-sm text-gray-900">{formatBRL(sale.unit_price)}</td>
+                          <td className="px-6 py-4 text-right text-sm font-semibold text-gray-900">{formatBRL(sale.total_sale)}</td>
+                          <td className="px-6 py-4 text-right text-sm font-semibold text-teal-700">{formatBRL(sale.profit)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -522,10 +527,10 @@ export default function ProductSalesReport() {
                         </td>
                         <td colSpan={2}></td>
                         <td className="px-6 py-4 text-right text-sm font-bold text-gray-900">
-                          R$ {detailedSales.reduce((sum, s) => sum + s.total_sale, 0).toFixed(2)}
+                          {formatBRL(detailedSales.reduce((sum, s) => sum + s.total_sale, 0))}
                         </td>
                         <td className="px-6 py-4 text-right text-sm font-bold text-green-600">
-                          R$ {detailedSales.reduce((sum, s) => sum + s.profit, 0).toFixed(2)}
+                          {formatBRL(detailedSales.reduce((sum, s) => sum + s.profit, 0))}
                         </td>
                       </tr>
                     </tfoot>
