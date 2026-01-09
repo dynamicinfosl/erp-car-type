@@ -8,9 +8,29 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [logoUrl, setLogoUrl] = useState(
+    'https://static.readdy.ai/image/016995f7e8292e3ea703f912413c6e1c/55707f5ad0b973e9e1fbd88859e769d0.png'
+  );
   const navigate = useNavigate();
 
   useEffect(() => {
+    const loadCompanyLogo = async () => {
+      try {
+        const { data } = await supabase
+          .from('system_settings')
+          .select('logo_url')
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (data?.logo_url) {
+          setLogoUrl(data.logo_url);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar logo:', error);
+      }
+    };
+
     // Limpar qualquer sessão inválida ao carregar a página de login
     const clearInvalidSession = async () => {
       try {
@@ -27,6 +47,7 @@ export default function LoginPage() {
       }
     };
 
+    loadCompanyLogo();
     clearInvalidSession();
   }, []);
 
@@ -115,8 +136,16 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-8">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg">
-            <i className="ri-car-line text-3xl text-white"></i>
+          <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center mx-auto mb-4 shadow-lg border border-gray-100">
+            <img
+              src={logoUrl}
+              alt="Logo da Empresa"
+              className="w-14 h-14 object-contain"
+              onError={(e) => {
+                // Fallback visual caso a URL esteja quebrada
+                (e.currentTarget as HTMLImageElement).style.display = 'none';
+              }}
+            />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Car Type Motors</h1>
           <p className="text-gray-600">Sistema de Gestão</p>
