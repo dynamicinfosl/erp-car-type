@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 import StockAlertDialog from '../../components/common/StockAlertDialog';
 
 interface Customer {
@@ -437,7 +438,9 @@ export default function Sales() {
       const { data: settings } = await supabase
         .from('system_settings')
         .select('*')
-        .single();
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
       // Buscar itens da venda
       let saleItems: any[] = [];
@@ -968,11 +971,12 @@ export default function Sales() {
   const { subtotal, discount, total } = calculateTotal();
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Vendas</h1>
@@ -1110,7 +1114,101 @@ export default function Sales() {
             </div>
           ) : (
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <table className="w-full">
+              {/* Mobile: cards */}
+              <div className="md:hidden divide-y divide-gray-200">
+                {filteredSales.map((sale) => (
+                  <div key={`${sale.type}-${sale.id}`} className="p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedSales.includes(`${sale.type}-${sale.id}`)}
+                          onChange={() => toggleSelectSale(sale.id, sale.type)}
+                          className="mt-1 w-4 h-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 cursor-pointer"
+                        />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              sale.payment_method === 'Venda na OS'
+                                ? 'bg-purple-100 text-purple-800'
+                                : sale.type === 'pos'
+                                ? 'bg-orange-100 text-orange-800'
+                                : 'bg-teal-100 text-teal-800'
+                            }`}>
+                              {sale.payment_method === 'Venda na OS' ? 'Venda na OS' : sale.type === 'pos' ? 'PDV' : 'Regular'}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(sale.date).toLocaleString('pt-BR')}
+                            </span>
+                          </div>
+
+                          <p className="mt-2 text-sm font-bold text-gray-900 truncate">
+                            {sale.customer || 'Cliente Avulso'}
+                          </p>
+                          {sale.customer_phone && (
+                            <p className="text-xs text-gray-600">{sale.customer_phone}</p>
+                          )}
+
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <div className="text-xs text-gray-600">
+                              <span className="font-semibold text-gray-900">
+                                R$ {sale.total.toFixed(2)}
+                              </span>
+                              {sale.discount > 0 && (
+                                <span className="ml-2 text-red-600">(- R$ {sale.discount.toFixed(2)})</span>
+                              )}
+                            </div>
+                            <span className="text-xs text-gray-600">
+                              {getPaymentMethodLabel(sale.payment_method)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                          onClick={() => handleEditSale(sale)}
+                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                          title="Editar"
+                        >
+                          <i className="ri-edit-line text-lg"></i>
+                        </button>
+                        <button
+                          onClick={() => handlePrintSale(sale)}
+                          className={`p-2 hover:bg-gray-50 rounded-lg transition cursor-pointer ${
+                            sale.payment_method === 'Venda na OS'
+                              ? 'text-purple-600'
+                              : sale.type === 'pos'
+                              ? 'text-orange-600'
+                              : 'text-teal-600'
+                          }`}
+                          title="Imprimir"
+                        >
+                          <i className="ri-printer-line text-lg"></i>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSale(sale.id, sale.type)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                          title="Excluir"
+                        >
+                          <i className="ri-delete-bin-line text-lg"></i>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                {filteredSales.length === 0 && (
+                  <div className="text-center py-12 text-gray-500">
+                    <i className="ri-shopping-cart-line text-5xl mb-4"></i>
+                    <p>Nenhuma venda encontrada</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Desktop: tabela */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full min-w-[980px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-4 text-left">
@@ -1232,13 +1330,8 @@ export default function Sales() {
                   ))}
                 </tbody>
               </table>
+              </div>
 
-              {filteredSales.length === 0 && (
-                <div className="text-center py-12 text-gray-500">
-                  <i className="ri-shopping-cart-line text-5xl mb-4"></i>
-                  <p>Nenhuma venda encontrada</p>
-                </div>
-              )}
             </div>
           )}
         </div>

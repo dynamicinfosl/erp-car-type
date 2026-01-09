@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
+import Sidebar from '../../../components/layout/Sidebar';
+import MobileTopBar from '../../../components/layout/MobileTopBar';
 
 interface Transaction {
   id: string;
@@ -11,6 +13,8 @@ interface Transaction {
 }
 
 export default function CashFlow() {
+  const formatBRL = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
@@ -67,11 +71,12 @@ export default function CashFlow() {
   const categories = Array.from(new Set(transactions.map(t => t.category)));
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Fluxo de Caixa</h1>
             <p className="text-gray-600">Visualize entradas e saídas do período</p>
@@ -82,7 +87,7 @@ export default function CashFlow() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total de Receitas</p>
-                  <p className="text-2xl font-bold text-green-600">R$ {totalRevenues.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-green-600">{formatBRL(totalRevenues)}</p>
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                   <i className="ri-arrow-up-line text-2xl text-green-600"></i>
@@ -94,7 +99,7 @@ export default function CashFlow() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total de Despesas</p>
-                  <p className="text-2xl font-bold text-red-600">R$ {totalExpenses.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-red-600">{formatBRL(totalExpenses)}</p>
                 </div>
                 <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                   <i className="ri-arrow-down-line text-2xl text-red-600"></i>
@@ -107,7 +112,7 @@ export default function CashFlow() {
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Saldo do Período</p>
                   <p className={`text-2xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    R$ {balance.toFixed(2)}
+                    {formatBRL(balance)}
                   </p>
                 </div>
                 <div className={`w-12 h-12 ${balance >= 0 ? 'bg-green-100' : 'bg-red-100'} rounded-lg flex items-center justify-center`}>
@@ -156,7 +161,8 @@ export default function CashFlow() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <table className="w-full">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px]">
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-4 text-left text-xs font-medium text-gray-500 uppercase">Data</th>
@@ -190,7 +196,7 @@ export default function CashFlow() {
                     <td className={`px-6 py-4 text-sm font-semibold text-right ${
                       transaction.type === 'revenue' ? 'text-green-600' : 'text-red-600'
                     }`}>
-                      {transaction.type === 'revenue' ? '+' : '-'} R$ {transaction.amount.toFixed(2)}
+                      {transaction.type === 'revenue' ? '+' : '-'} {formatBRL(transaction.amount)}
                     </td>
                   </tr>
                 ))}
@@ -203,11 +209,12 @@ export default function CashFlow() {
                   <td className={`px-6 py-4 text-right text-lg font-bold ${
                     balance >= 0 ? 'text-green-600' : 'text-red-600'
                   }`}>
-                    R$ {balance.toFixed(2)}
+                    {formatBRL(balance)}
                   </td>
                 </tr>
               </tfoot>
             </table>
+            </div>
 
             {filteredTransactions.length === 0 && (
               <div className="p-12 text-center">

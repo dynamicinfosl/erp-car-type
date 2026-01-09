@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 import { supabase, type Customer, type Vehicle } from '../../lib/supabase';
 
 type CustomerWithVehicles = Customer & {
@@ -330,25 +331,18 @@ export default function Customers() {
   );
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Clientes</h1>
               <p className="text-gray-600">Gerenciar clientes e veículos</p>
             </div>
             <div className="flex items-center gap-3">
-              <button
-                onClick={fixExistingDocuments}
-                className="px-4 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition flex items-center gap-2 whitespace-nowrap text-sm"
-                title="Corrigir documentos existentes (CPF/CNPJ)"
-              >
-                <i className="ri-refresh-line text-lg"></i>
-                Corrigir Documentos
-              </button>
               <button
                 onClick={() => {
                   setEditingCustomer(null);
@@ -387,24 +381,24 @@ export default function Customers() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-1 gap-3">
             {filteredCustomers.map((customer) => (
               <div key={customer.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-teal-700 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                       {customer.name.charAt(0).toUpperCase()}
                     </div>
                     
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-bold text-gray-900 truncate">{customer.name}</h3>
+                      <h3 className="text-sm font-bold text-gray-900 break-words">{customer.name}</h3>
                       <div className="flex items-center gap-3 text-xs text-gray-600">
                         <span className="flex items-center gap-1">
                           <i className="ri-phone-line text-teal-600"></i>
                           {customer.phone}
                         </span>
                         {customer.email && (
-                          <span className="flex items-center gap-1 truncate">
+                          <span className="hidden md:flex items-center gap-1 truncate">
                             <i className="ri-mail-line text-teal-600"></i>
                             <span className="truncate">{customer.email}</span>
                           </span>
@@ -414,9 +408,9 @@ export default function Customers() {
                   </div>
 
                   {customer.vehicles && customer.vehicles.length > 0 && (
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0 w-full md:w-auto overflow-x-auto md:overflow-visible">
                       {customer.vehicles.slice(0, 2).map((vehicle) => (
-                        <div key={vehicle.id} className="bg-gray-50 rounded px-2 py-1 border border-gray-200">
+                        <div key={vehicle.id} className="bg-gray-50 rounded px-2 py-1 border border-gray-200 flex-shrink-0">
                           <p className="text-xs font-semibold text-gray-900 truncate max-w-[120px]">
                             {vehicle.brand ? `${vehicle.brand} ` : ''}{vehicle.model}
                           </p>
@@ -431,7 +425,7 @@ export default function Customers() {
                     </div>
                   )}
 
-                  <div className="flex gap-1.5 flex-shrink-0">
+                  <div className="flex gap-1.5 flex-shrink-0 justify-end md:justify-start">
                     <button
                       onClick={() => {
                         setSelectedCustomer(customer);

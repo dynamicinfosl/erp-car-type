@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import Toast from '../../../components/common/Toast';
 import Sidebar from '../../../components/layout/Sidebar';
+import MobileTopBar from '../../../components/layout/MobileTopBar';
 
 interface SystemSettings {
   id?: string;
@@ -57,12 +58,11 @@ export default function CompanySettings() {
       const { data, error } = await supabase
         .from('system_settings')
         .select('*')
+        .order('created_at', { ascending: true })
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
+      if (error) throw error;
 
       if (data) {
         console.log('📥 Dados carregados do banco:', data);
@@ -194,9 +194,10 @@ export default function CompanySettings() {
 
   if (loading) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
-        <div className="flex-1 overflow-auto ml-64">
+        <div className="flex-1 overflow-auto md:ml-64">
+          <MobileTopBar />
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
           </div>
@@ -206,10 +207,11 @@ export default function CompanySettings() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-gray-900">Configurações da Empresa</h1>
             <p className="text-gray-600 mt-1">Gerencie as informações da sua empresa</p>

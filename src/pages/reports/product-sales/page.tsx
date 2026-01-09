@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import Sidebar from '../../../components/layout/Sidebar';
+import MobileTopBar from '../../../components/layout/MobileTopBar';
 
 interface ProductSale {
   product_id: string;
@@ -304,11 +305,12 @@ export default function ProductSalesReport() {
   const overallMargin = totals.sales > 0 ? (totals.profit / totals.sales) * 100 : 0;
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Relatório de Vendas por Produto</h1>
             <p className="text-gray-600">Análise detalhada de vendas, custos e lucratividade</p>

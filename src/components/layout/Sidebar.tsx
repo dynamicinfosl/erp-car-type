@@ -11,21 +11,45 @@ export default function Sidebar() {
   const [userName, setUserName] = useState<string>('');
   const [userRole, setUserRole] = useState<string>('');
   const [userPermissions, setUserPermissions] = useState<any>([]);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     loadCompanyLogo();
     loadUserInfo();
   }, []);
 
+  // Mobile: por padrão fecha ao navegar, mas ao entrar no Dashboard pela primeira vez após login pode abrir automaticamente
+  useEffect(() => {
+    try {
+      const isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+      const shouldOpenOnce = localStorage.getItem('open_sidebar_on_dashboard_once') === '1';
+
+      if (isMobile && location.pathname === '/dashboard' && shouldOpenOnce) {
+        setMobileOpen(true);
+        localStorage.removeItem('open_sidebar_on_dashboard_once');
+        return;
+      }
+    } catch {}
+
+    setMobileOpen(false);
+  }, [location.pathname]);
+
   const loadCompanyLogo = async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('system_settings')
         .select('logo_url')
-        .single();
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
       
       if (data?.logo_url) {
         setLogoUrl(data.logo_url);
+        try {
+          localStorage.setItem('company_logo_url', data.logo_url);
+        } catch {}
       }
     } catch (error) {
       console.error('Erro ao carregar logo:', error);
@@ -147,9 +171,65 @@ export default function Sidebar() {
   };
 
   return (
-    <div className="w-64 bg-gradient-to-b from-gray-900 to-gray-800 text-white h-screen fixed left-0 top-0 flex flex-col">
+    <>
+      {/* Botão hambúrguer (mobile) */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        className={[
+          "fixed top-3 left-3 z-[60] md:hidden bg-gray-900/90 text-white rounded-lg p-2 shadow-lg border border-gray-700 cursor-pointer",
+          mobileOpen ? "hidden" : "block",
+        ].join(" ")}
+        aria-label="Abrir menu"
+        title="Menu"
+      >
+        <i className="ri-menu-line text-xl"></i>
+      </button>
+
+      {/* Overlay (mobile) */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[55] md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <div
+        className={[
+          "w-64 bg-gradient-to-b from-gray-900 to-gray-800 text-white h-screen fixed left-0 top-0 flex flex-col z-[56]",
+          "transition-transform duration-200 ease-out",
+          "md:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+        ].join(" ")}
+        role="navigation"
+        aria-label="Sidebar"
+      >
+        {/* Header (mobile) */}
+        <div className="md:hidden flex items-center justify-between p-4 border-b border-gray-700">
+          <div className="flex items-center gap-3">
+            <img
+              src={logoUrl}
+              alt="Car Type Motors"
+              className="w-9 h-9 rounded-lg object-cover"
+            />
+            <div>
+              <h1 className="font-bold text-base leading-tight">Car Type Motors</h1>
+              <p className="text-[11px] text-gray-400 leading-tight">Sistema de Gestão</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="text-gray-300 hover:text-white hover:bg-white/10 rounded-lg p-2 transition cursor-pointer"
+            aria-label="Fechar menu"
+            title="Fechar"
+          >
+            <i className="ri-close-line text-xl"></i>
+          </button>
+        </div>
+
       <div className="p-6 border-b border-gray-700">
-        <div className="flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-3">
           <img 
             src={logoUrl} 
             alt="Car Type Motors" 
@@ -234,6 +314,7 @@ export default function Sidebar() {
           <span className="font-medium">Sair</span>
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

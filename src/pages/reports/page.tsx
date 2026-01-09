@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useNavigate } from 'react-router-dom';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 
 interface ReportData {
   sales: {
@@ -310,11 +311,12 @@ export default function Reports() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Relatórios</h1>
             <p className="text-gray-600 mt-1">Análise completa do desempenho do negócio</p>

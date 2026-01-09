@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 import Toast from '../../components/common/Toast';
 
 interface Product {
@@ -603,11 +604,13 @@ export default function POS() {
 
   if (showOpenCashModal) {
     return (
-      <div className="flex h-screen bg-gray-50">
+      <div className="flex min-h-screen bg-gray-50">
         <Sidebar />
         
-        <div className="flex-1 overflow-auto ml-64 flex items-center justify-center p-6">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-8">
+        <div className="flex-1 overflow-auto md:ml-64">
+          <MobileTopBar />
+          <div className="flex items-center justify-center p-4 md:p-6">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-8">
             <div className="text-center mb-6">
               <div className="w-20 h-20 bg-gradient-to-r from-orange-500 to-orange-600 rounded-full flex items-center justify-center mx-auto mb-4">
                 <i className="ri-cash-line text-4xl text-white"></i>
@@ -653,6 +656,7 @@ export default function POS() {
               </button>
             </div>
           </div>
+          </div>
         </div>
 
         {toast && (
@@ -667,10 +671,11 @@ export default function POS() {
   }
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-hidden flex flex-col ml-64">
+      <div className="flex-1 overflow-hidden flex flex-col md:ml-64">
+        <MobileTopBar />
         {/* Header */}
         <div className="bg-white border-b border-gray-200 px-6 py-4">
           <div className="flex justify-between items-center">
@@ -698,9 +703,9 @@ export default function POS() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-hidden flex">
+        <div className="flex-1 overflow-hidden flex flex-col md:flex-row">
           {/* Left Side - Products */}
-          <div className="flex-1 overflow-auto p-6">
+          <div className="flex-1 overflow-auto p-4 md:p-6">
             <div className="mb-4">
               <div className="relative">
                 <i className="ri-search-line absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-xl"></i>
@@ -766,7 +771,7 @@ export default function POS() {
                     />
                   </div>
 
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Quantidade</label>
                       <input
@@ -844,7 +849,7 @@ export default function POS() {
           </div>
 
           {/* Right Side - Cart */}
-          <div className="w-96 bg-white border-l border-gray-200 flex flex-col">
+          <div className="w-full md:w-96 bg-white md:border-l border-gray-200 flex flex-col max-h-[45vh] md:max-h-none">
             <div className="p-4 border-b border-gray-200 bg-gray-50">
               <h2 className="text-lg font-bold text-gray-900">Carrinho de Compras</h2>
             </div>

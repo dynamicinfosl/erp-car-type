@@ -5,6 +5,7 @@ import ConfirmDialog from '../../components/common/ConfirmDialog';
 import StockAlertDialog from '../../components/common/StockAlertDialog';
 import InvoiceValidationModal from '../../components/common/InvoiceValidationModal';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 
 // 🔥 Funções utilitárias para CPF/CNPJ
 const cleanDocument = (doc: string): string => {
@@ -1779,11 +1780,12 @@ export default function ServiceOrders() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Ordens de Serviço</h1>
             <p className="text-gray-600">Gerencie as ordens de serviço do centro automotivo</p>
@@ -1944,9 +1946,11 @@ export default function ServiceOrders() {
             {filteredOrders.map((order) => {
               const remainingAmount = getRemainingAmount(order);
               return (
-                <div key={order.id} className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6 flex-1">
+                <div key={order.id} className="bg-white rounded-xl shadow-sm p-4 md:p-6 hover:shadow-md transition">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex-1">
+                      {/* Desktop: layout em linha | Mobile: layout empilhado */}
+                      <div className="hidden md:flex items-center gap-6">
                       <div className="flex flex-col">
                         <span className="text-xs text-gray-500 mb-1">ID</span>
                         <span className="font-mono text-sm font-semibold text-gray-900">#{order.id.slice(0, 8)}</span>
@@ -2002,9 +2006,38 @@ export default function ServiceOrders() {
                           </span>
                         )}
                       </div>
+                      </div>
+
+                      {/* Mobile: resumo compacto */}
+                      <div className="md:hidden space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-900 truncate">{order.customer?.name}</p>
+                            <p className="text-xs text-gray-600">{order.customer?.phone}</p>
+                            <p className="text-xs text-gray-500 mt-1">{formatDateTime(order.created_at)}</p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-xs text-gray-500">#{order.id.slice(0, 8)}</p>
+                            <p className="text-sm font-bold text-orange-600">R$ {order.total_amount.toFixed(2)}</p>
+                            {order.payment_status === 'partial' && (
+                              <p className="text-[11px] text-gray-600">Falta: R$ {remainingAmount.toFixed(2)}</p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            {getStatusBadge(order.status)}
+                            {getPaymentBadge(order.payment_status)}
+                          </div>
+                          <div className="text-xs text-gray-600 truncate max-w-[45%]">
+                            {order.vehicle?.model} {order.vehicle?.plate ? `• ${order.vehicle.plate}` : ''}
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex items-end gap-3">
+                    <div className="flex items-end md:items-end gap-2 md:gap-3 justify-end">
                       <button
                         onClick={() => {
                           setSelectedOrderForView(order);

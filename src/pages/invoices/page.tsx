@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 
 interface Customer {
   id: string;
@@ -390,11 +391,12 @@ export default function Invoices() {
   const filteredInvoices = getFilteredInvoices();
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900 mb-2">Notas Fiscais</h1>
             <p className="text-gray-600">Visualize e gerencie todas as notas fiscais emitidas</p>
@@ -540,9 +542,11 @@ export default function Invoices() {
               </div>
             ) : (
               filteredInvoices.map((invoice) => (
-                <div key={invoice.id} className="bg-white rounded-xl shadow-sm p-6 hover:shadow-md transition">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6 flex-1">
+                <div key={invoice.id} className="bg-white rounded-xl shadow-sm p-4 md:p-6 hover:shadow-md transition">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                    <div className="flex-1">
+                      {/* Desktop: layout em linha */}
+                      <div className="hidden md:flex items-center gap-6">
                       <div className="flex flex-col">
                         <span className="text-xs text-gray-500 mb-1">Número da NF</span>
                         <span className="font-mono text-lg font-bold text-teal-600">#{invoice.invoice_number}</span>
@@ -588,9 +592,33 @@ export default function Invoices() {
                           R$ {invoice.total_amount.toFixed(2)}
                         </span>
                       </div>
+                      </div>
+
+                      {/* Mobile: resumo compacto */}
+                      <div className="md:hidden space-y-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-gray-900 truncate">
+                              NF #{invoice.invoice_number}
+                            </p>
+                            <p className="text-xs text-gray-600 truncate">{invoice.customer?.name}</p>
+                            <p className="text-xs text-gray-500 mt-1">
+                              {formatDateTime(invoice.invoice_updated_at || invoice.created_at)}
+                            </p>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-sm font-bold text-orange-600">R$ {invoice.total_amount.toFixed(2)}</p>
+                            <div className="mt-1 flex justify-end">{getStatusBadge(invoice.invoice_status)}</div>
+                          </div>
+                        </div>
+
+                        <div className="text-xs text-gray-600 truncate">
+                          {invoice.vehicle?.model} {invoice.vehicle?.plate ? `• ${invoice.vehicle.plate}` : ''}
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="flex items-end gap-2 ml-4">
+                    <div className="flex items-end gap-2 md:ml-4 justify-end">
                       {/* Botão Visualizar OS */}
                       <button
                         onClick={() => handleViewOrder(invoice.id)}

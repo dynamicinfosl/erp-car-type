@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 import { supabase, type Conversation, type Message, type Customer } from '../../lib/supabase';
 
 type ConversationWithCustomer = Conversation & {
@@ -80,14 +81,14 @@ export default function InboxPage() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
-          <div className="flex min-h-screen bg-gray-50">
-            <div className="flex-1 ml-64 flex">
-              <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
+          <div className="flex flex-col md:flex-row bg-gray-50 rounded-xl overflow-hidden border border-gray-200">
+              <div className="w-full md:w-80 bg-white md:border-r border-gray-200 flex flex-col">
                 <div className="p-6 border-b border-gray-200">
                   <h1 className="text-2xl font-bold text-gray-900">Conversas</h1>
                   <p className="text-sm text-gray-600 mt-1">WhatsApp</p>
@@ -192,7 +193,6 @@ export default function InboxPage() {
                   </div>
                 )}
               </div>
-            </div>
           </div>
         </div>
       </div>

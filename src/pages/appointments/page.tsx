@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 import { supabase, type Appointment, type Customer, type Vehicle } from '../../lib/supabase';
 
 // 🔥 Funções utilitárias para CPF/CNPJ
@@ -258,11 +259,12 @@ export default function Appointments() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Agenda</h1>

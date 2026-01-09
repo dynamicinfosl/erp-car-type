@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import Toast from '../../../components/common/Toast';
+import Sidebar from '../../../components/layout/Sidebar';
+import MobileTopBar from '../../../components/layout/MobileTopBar';
 
 interface Receivable {
   id: string;
@@ -15,6 +17,8 @@ interface Receivable {
 }
 
 export default function Receivables() {
+  const formatBRL = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
   const [receivables, setReceivables] = useState<Receivable[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Receivable | null>(null);
@@ -158,11 +162,12 @@ export default function Receivables() {
   const categories = ['Serviços', 'Vendas', 'Produtos', 'Outros'];
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           {toast && (
             <Toast
               message={toast.message}
@@ -181,7 +186,7 @@ export default function Receivables() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total a Receber</p>
-                  <p className="text-2xl font-bold text-orange-600">R$ {totalPending.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-orange-600">{formatBRL(totalPending)}</p>
                 </div>
                 <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                   <i className="ri-time-line text-2xl text-orange-600"></i>
@@ -193,7 +198,7 @@ export default function Receivables() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total Recebido</p>
-                  <p className="text-2xl font-bold text-green-600">R$ {totalReceived.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-green-600">{formatBRL(totalReceived)}</p>
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                   <i className="ri-check-line text-2xl text-green-600"></i>
@@ -205,7 +210,7 @@ export default function Receivables() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total Geral</p>
-                  <p className="text-2xl font-bold text-gray-900">R$ {(totalPending + totalReceived).toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatBRL(totalPending + totalReceived)}</p>
                 </div>
                 <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
                   <i className="ri-money-dollar-circle-line text-2xl text-gray-600"></i>
@@ -289,7 +294,7 @@ export default function Receivables() {
                     <td className="px-6 py-4 text-sm text-gray-600">{item.customer_name || '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{item.category}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900 text-right">
-                      R$ {item.amount.toFixed(2)}
+                      {formatBRL(item.amount)}
                     </td>
                     <td className="px-6 py-4 text-center">
                       {item.status === 'received' ? (

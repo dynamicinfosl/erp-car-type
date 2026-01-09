@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import Sidebar from '../../../components/layout/Sidebar';
+import MobileTopBar from '../../../components/layout/MobileTopBar';
 import Toast from '../../../components/common/Toast';
 import ConfirmDialog from '../../../components/common/ConfirmDialog';
 
@@ -319,11 +320,12 @@ export default function UsersSettings() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
@@ -352,7 +354,8 @@ export default function UsersSettings() {
             </div>
           ) : (
             <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-              <table className="w-full">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[720px]">
                 <thead className="bg-gray-50 border-b border-gray-200">
                   <tr>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Nome</th>
@@ -407,6 +410,7 @@ export default function UsersSettings() {
                   ))}
                 </tbody>
               </table>
+              </div>
 
               {users.length === 0 && (
                 <div className="text-center py-12">

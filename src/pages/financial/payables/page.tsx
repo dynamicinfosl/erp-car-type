@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import Toast from '../../../components/common/Toast';
+import Sidebar from '../../../components/layout/Sidebar';
+import MobileTopBar from '../../../components/layout/MobileTopBar';
 
 interface Payable {
   id: string;
@@ -15,6 +17,8 @@ interface Payable {
 }
 
 export default function Payables() {
+  const formatBRL = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
   const [payables, setPayables] = useState<Payable[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingItem, setEditingItem] = useState<Payable | null>(null);
@@ -158,11 +162,12 @@ export default function Payables() {
   const categories = ['Fornecedores', 'Aluguel', 'Salários', 'Impostos', 'Energia', 'Água', 'Internet', 'Outros'];
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           {toast && (
             <Toast
               message={toast.message}
@@ -181,7 +186,7 @@ export default function Payables() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total a Pagar</p>
-                  <p className="text-2xl font-bold text-red-600">R$ {totalPending.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-red-600">{formatBRL(totalPending)}</p>
                 </div>
                 <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                   <i className="ri-time-line text-2xl text-red-600"></i>
@@ -193,7 +198,7 @@ export default function Payables() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total Pago</p>
-                  <p className="text-2xl font-bold text-green-600">R$ {totalPaid.toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-green-600">{formatBRL(totalPaid)}</p>
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                   <i className="ri-check-line text-2xl text-green-600"></i>
@@ -205,7 +210,7 @@ export default function Payables() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-gray-600 mb-1">Total Geral</p>
-                  <p className="text-2xl font-bold text-gray-900">R$ {(totalPending + totalPaid).toFixed(2)}</p>
+                  <p className="text-2xl font-bold text-gray-900">{formatBRL(totalPending + totalPaid)}</p>
                 </div>
                 <div className="w-12 h-12 bg-gray-100 rounded-lg flex items-center justify-center">
                   <i className="ri-money-dollar-circle-line text-2xl text-gray-600"></i>
@@ -289,7 +294,7 @@ export default function Payables() {
                     <td className="px-6 py-4 text-sm text-gray-600">{item.supplier_name || '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{item.category}</td>
                     <td className="px-6 py-4 text-sm font-semibold text-gray-900 text-right">
-                      R$ {item.amount.toFixed(2)}
+                      {formatBRL(item.amount)}
                     </td>
                     <td className="px-6 py-4 text-center">
                       {item.status === 'paid' ? (

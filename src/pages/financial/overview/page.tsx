@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import Sidebar from '../../../components/layout/Sidebar';
+import MobileTopBar from '../../../components/layout/MobileTopBar';
 
 interface FinancialSummary {
   totalReceivables: number;
@@ -13,6 +14,8 @@ interface FinancialSummary {
 
 export default function FinancialOverview() {
   const [loading, setLoading] = useState(true);
+  const formatBRL = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
   const [summary, setSummary] = useState<FinancialSummary>({
     totalReceivables: 0,
     totalReceived: 0,
@@ -84,11 +87,12 @@ export default function FinancialOverview() {
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold text-gray-900">Visão Geral Financeira</h1>
             <p className="text-gray-600 mt-1">Resumo completo das finanças</p>
@@ -108,7 +112,7 @@ export default function FinancialOverview() {
                   </div>
                 </div>
                 <p className="text-3xl font-bold text-green-600">
-                  R$ {summary.totalReceived.toFixed(2)}
+                  {formatBRL(summary.totalReceived)}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">Total de receitas recebidas</p>
               </div>
@@ -121,7 +125,7 @@ export default function FinancialOverview() {
                   </div>
                 </div>
                 <p className="text-3xl font-bold text-blue-600">
-                  R$ {summary.totalReceivables.toFixed(2)}
+                  {formatBRL(summary.totalReceivables)}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">Receitas pendentes</p>
               </div>
@@ -134,7 +138,7 @@ export default function FinancialOverview() {
                   </div>
                 </div>
                 <p className="text-3xl font-bold text-red-600">
-                  R$ {summary.totalPaid.toFixed(2)}
+                  {formatBRL(summary.totalPaid)}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">Total de despesas pagas</p>
               </div>
@@ -147,7 +151,7 @@ export default function FinancialOverview() {
                   </div>
                 </div>
                 <p className="text-3xl font-bold text-orange-600">
-                  R$ {summary.totalPayables.toFixed(2)}
+                  {formatBRL(summary.totalPayables)}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">Despesas pendentes</p>
               </div>
@@ -168,7 +172,7 @@ export default function FinancialOverview() {
                 <p className={`text-3xl font-bold ${
                   summary.balance >= 0 ? 'text-green-600' : 'text-red-600'
                 }`}>
-                  R$ {summary.balance.toFixed(2)}
+                  {formatBRL(summary.balance)}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">Receitas - Despesas</p>
               </div>
@@ -181,7 +185,7 @@ export default function FinancialOverview() {
                   </div>
                 </div>
                 <p className="text-3xl font-bold">
-                  R$ {(summary.totalReceived + summary.totalReceivables).toFixed(2)}
+                  {formatBRL(summary.totalReceived + summary.totalReceivables)}
                 </p>
                 <p className="text-sm opacity-90 mt-2">Receitas totais (recebidas + a receber)</p>
               </div>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 
 interface Stats {
   totalCustomers: number;
@@ -147,10 +148,11 @@ export default function Dashboard() {
   const monthProfit = stats.monthRevenue - stats.monthExpenses;
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           {/* Header */}
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>

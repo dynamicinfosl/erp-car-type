@@ -94,6 +94,11 @@ export default function LoginPage() {
 
       // 5. Redirecionar baseado no role e permissões
       if (userData.role === 'master' || userData.role === 'admin') {
+        // Mobile: abrir o sidebar automaticamente ao entrar no dashboard pela primeira vez após login
+        try {
+          const isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+          if (isMobile) localStorage.setItem('open_sidebar_on_dashboard_once', '1');
+        } catch {}
         window.REACT_APP_NAVIGATE('/dashboard');
       } else {
         // Para operadores e caixas, redirecionar para a primeira página com permissão
@@ -121,6 +126,14 @@ export default function LoginPage() {
             break;
           }
         }
+
+        // Mobile: se a primeira página for dashboard, abrir sidebar automaticamente na primeira entrada
+        try {
+          const isMobile = window.matchMedia && window.matchMedia('(max-width: 767px)').matches;
+          if (isMobile && redirectPath === '/dashboard') {
+            localStorage.setItem('open_sidebar_on_dashboard_once', '1');
+          }
+        } catch {}
 
         window.REACT_APP_NAVIGATE(redirectPath);
       }

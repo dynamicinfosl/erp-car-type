@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import Sidebar from '../../components/layout/Sidebar';
+import MobileTopBar from '../../components/layout/MobileTopBar';
 
 interface Product {
   id: string;
@@ -26,6 +27,8 @@ export default function Stock() {
   const [products, setProducts] = useState<Product[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
   const [loading, setLoading] = useState(true);
+  const formatBRL = (value: number) =>
+    new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
   const [showModal, setShowModal] = useState(false);
   const [activeTab, setActiveTab] = useState<'products' | 'movements'>('products');
 
@@ -117,11 +120,12 @@ export default function Stock() {
   const lowStockProducts = products.filter(p => p.stock_quantity <= p.min_stock);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
       
-      <div className="flex-1 overflow-auto ml-64">
-        <div className="p-8">
+      <div className="flex-1 overflow-auto md:ml-64">
+        <MobileTopBar />
+        <div className="p-4 md:p-8">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Controle de Estoque</h1>
@@ -186,7 +190,7 @@ export default function Stock() {
               </div>
             ) : activeTab === 'products' ? (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[820px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Produto</th>
@@ -211,8 +215,8 @@ export default function Stock() {
                             </span>
                           </td>
                           <td className="px-6 py-4 text-gray-600">{product.min_stock}</td>
-                          <td className="px-6 py-4 text-gray-900">R$ {product.unit_price.toFixed(2)}</td>
-                          <td className="px-6 py-4 font-medium text-gray-900">R$ {totalValue.toFixed(2)}</td>
+                          <td className="px-6 py-4 text-gray-900">{formatBRL(product.unit_price)}</td>
+                          <td className="px-6 py-4 font-medium text-gray-900">{formatBRL(totalValue)}</td>
                           <td className="px-6 py-4">
                             {isLowStock ? (
                               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
@@ -232,7 +236,7 @@ export default function Stock() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full min-w-[820px]">
                   <thead className="bg-gray-50 border-b border-gray-200">
                     <tr>
                       <th className="px-6 py-4 text-left text-xs font-semibold text-gray-600 uppercase">Data</th>
@@ -268,7 +272,7 @@ export default function Stock() {
                         </td>
                         <td className="px-6 py-4 text-gray-900">{movement.quantity}</td>
                         <td className="px-6 py-4 font-medium text-gray-900">
-                          R$ {movement.total_value.toFixed(2)}
+                          {formatBRL(movement.total_value)}
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-600">{movement.reason || '-'}</td>
                       </tr>
