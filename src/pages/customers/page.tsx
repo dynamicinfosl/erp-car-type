@@ -6,6 +6,49 @@ type CustomerWithVehicles = Customer & {
   vehicles: Vehicle[];
 };
 
+// 🔥 Funções utilitárias para CPF/CNPJ
+const cleanDocument = (doc: string): string => {
+  return doc.replace(/\D/g, '');
+};
+
+const isCPF = (doc: string): boolean => {
+  const cleaned = cleanDocument(doc);
+  return cleaned.length === 11;
+};
+
+const isCNPJ = (doc: string): boolean => {
+  const cleaned = cleanDocument(doc);
+  return cleaned.length === 14;
+};
+
+const formatCPF = (cpf: string): string => {
+  const cleaned = cleanDocument(cpf);
+  if (cleaned.length !== 11) return cpf;
+  return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+};
+
+const formatCNPJ = (cnpj: string): string => {
+  const cleaned = cleanDocument(cnpj);
+  if (cleaned.length !== 14) return cnpj;
+  return cleaned.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+};
+
+const formatDocument = (doc: string): string => {
+  if (!doc) return '';
+  const cleaned = cleanDocument(doc);
+  if (cleaned.length === 11) return formatCPF(doc);
+  if (cleaned.length === 14) return formatCNPJ(doc);
+  return doc;
+};
+
+const getDocumentType = (doc: string): 'CPF' | 'CNPJ' | null => {
+  if (!doc) return null;
+  const cleaned = cleanDocument(doc);
+  if (cleaned.length === 11) return 'CPF';
+  if (cleaned.length === 14) return 'CNPJ';
+  return null;
+};
+
 export default function Customers() {
   const [customers, setCustomers] = useState<CustomerWithVehicles[]>([]);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -13,6 +56,7 @@ export default function Customers() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [documentType, setDocumentType] = useState<'CPF' | 'CNPJ' | null>(null);
   
   const [customerForm, setCustomerForm] = useState({
     name: '',
@@ -50,6 +94,75 @@ export default function Customers() {
     loadCustomers();
   }, []);
 
+  // 🔥 Função para corrigir documentos existentes (CNPJs que estão no campo CPF)
+  const fixExistingDocuments = async () => {
+    if (!confirm('Esta ação irá corrigir todos os documentos cadastrados, identificando automaticamente CPFs e CNPJs. Deseja continuar?')) {
+      return;
+    }
+
+    try {
+      // Buscar todos os clientes com CPF preenchido
+      const { data: allCustomers, error: fetchError } = await supabase
+        .from('customers')
+        .select('id, cpf')
+        .not('cpf', 'is', null);
+
+      if (fetchError) throw fetchError;
+
+      if (!allCustomers || allCustomers.length === 0) {
+        alert('Nenhum cliente com documento cadastrado encontrado.');
+        return;
+      }
+
+      let fixed = 0;
+      let unchanged = 0;
+
+      // Processar cada cliente
+      for (const customer of allCustomers) {
+        if (!customer.cpf) continue;
+
+        const cleaned = cleanDocument(customer.cpf);
+        
+        // Se já está correto (11 ou 14 dígitos), não precisa corrigir
+        if (cleaned.length === 11 || cleaned.length === 14) {
+          unchanged++;
+          continue;
+        }
+
+        // Se tem mais de 11 dígitos mas menos de 14, pode ser um CNPJ incompleto
+        // Ou se tem exatamente 14 dígitos mas não está formatado, é CNPJ
+        if (cleaned.length === 14) {
+          // É CNPJ, já está correto (só precisa garantir que está limpo)
+          await supabase
+            .from('customers')
+            .update({ cpf: cleaned })
+            .eq('id', customer.id);
+          fixed++;
+        } else if (cleaned.length > 11) {
+          // Tem mais de 11 dígitos, provavelmente é CNPJ
+          // Pegar apenas os primeiros 14 dígitos
+          const cnpj = cleaned.substring(0, 14);
+          await supabase
+            .from('customers')
+            .update({ cpf: cnpj })
+            .eq('id', customer.id);
+          fixed++;
+        } else if (cleaned.length < 11 && cleaned.length > 0) {
+          // Tem menos de 11 dígitos, pode ser CPF incompleto
+          // Preencher com zeros à direita até ter 11 dígitos (ou deixar como está)
+          // Na verdade, melhor deixar como está para não corromper dados
+          unchanged++;
+        }
+      }
+
+      alert(`Migração concluída!\n\nCorrigidos: ${fixed}\nInalterados: ${unchanged}\n\nOs documentos foram identificados e formatados automaticamente.`);
+      loadCustomers();
+    } catch (error: any) {
+      console.error('Erro ao corrigir documentos:', error);
+      alert(`Erro ao corrigir documentos: ${error.message}`);
+    }
+  };
+
   const loadCustomers = async () => {
     const { data } = await supabase
       .from('customers')
@@ -60,11 +173,13 @@ export default function Customers() {
 
   const openEditCustomer = (customer: Customer) => {
     setEditingCustomer(customer);
+    const cpfValue = customer.cpf || '';
+    setDocumentType(getDocumentType(cpfValue));
     setCustomerForm({
       name: customer.name,
       phone: customer.phone,
       email: customer.email || '',
-      cpf: customer.cpf || '',
+      cpf: formatDocument(cpfValue),
       address: customer.address || '',
       city: customer.city || '',
       state: customer.state || '',
@@ -80,15 +195,23 @@ export default function Customers() {
       return;
     }
 
+    // Limpar e salvar o documento sem formatação
+    const documentToSave = customerForm.cpf ? cleanDocument(customerForm.cpf) : '';
+
+    const customerData = {
+      ...customerForm,
+      cpf: documentToSave,
+    };
+
     if (editingCustomer) {
       await supabase
         .from('customers')
-        .update(customerForm)
+        .update(customerData)
         .eq('id', editingCustomer.id);
     } else {
       const { data: newCustomer, error } = await supabase
         .from('customers')
-        .insert(customerForm)
+        .insert(customerData)
         .select()
         .single();
 
@@ -116,6 +239,7 @@ export default function Customers() {
 
     setShowCustomerModal(false);
     setEditingCustomer(null);
+    setDocumentType(null);
     setCustomerForm({
       name: '',
       phone: '',
@@ -216,27 +340,38 @@ export default function Customers() {
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Clientes</h1>
               <p className="text-gray-600">Gerenciar clientes e veículos</p>
             </div>
-            <button
-              onClick={() => {
-                setEditingCustomer(null);
-                setCustomerForm({
-                  name: '',
-                  phone: '',
-                  email: '',
-                  cpf: '',
-                  address: '',
-                  city: '',
-                  state: '',
-                  zip_code: '',
-                  notes: '',
-                });
-                setShowCustomerModal(true);
-              }}
-              className="px-6 py-3 bg-teal-600 text-white rounded-lg font-semibold hover:bg-teal-700 transition flex items-center gap-2 whitespace-nowrap"
-            >
-              <i className="ri-add-line text-xl"></i>
-              Novo Cliente
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={fixExistingDocuments}
+                className="px-4 py-3 bg-orange-600 text-white rounded-lg font-semibold hover:bg-orange-700 transition flex items-center gap-2 whitespace-nowrap text-sm"
+                title="Corrigir documentos existentes (CPF/CNPJ)"
+              >
+                <i className="ri-refresh-line text-lg"></i>
+                Corrigir Documentos
+              </button>
+              <button
+                onClick={() => {
+                  setEditingCustomer(null);
+                  setDocumentType(null);
+                  setCustomerForm({
+                    name: '',
+                    phone: '',
+                    email: '',
+                    cpf: '',
+                    address: '',
+                    city: '',
+                    state: '',
+                    zip_code: '',
+                    notes: '',
+                  });
+                  setShowCustomerModal(true);
+                }}
+                className="px-6 py-3 bg-teal-600 text-white rounded-lg font-semibold hover:bg-teal-700 transition flex items-center gap-2 whitespace-nowrap"
+              >
+                <i className="ri-add-line text-xl"></i>
+                Novo Cliente
+              </button>
+            </div>
           </div>
 
           <div className="mb-6">
@@ -246,7 +381,7 @@ export default function Customers() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Buscar por nome, telefone, email ou CPF..."
+                placeholder="Buscar por nome, telefone, email, CPF ou CNPJ..."
                 className="w-full pl-12 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
               />
             </div>
@@ -370,14 +505,36 @@ export default function Customers() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">CPF</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CPF/CNPJ {documentType && <span className="text-teal-600 text-xs">({documentType})</span>}
+                  </label>
                   <input
                     type="text"
                     value={customerForm.cpf}
-                    onChange={(e) => setCustomerForm({ ...customerForm, cpf: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const cleaned = cleanDocument(value);
+                      
+                      // Limitar a 14 dígitos (tamanho máximo do CNPJ)
+                      if (cleaned.length > 14) return;
+                      
+                      // Detectar tipo automaticamente
+                      const detectedType = getDocumentType(value);
+                      setDocumentType(detectedType);
+                      
+                      // Formatar automaticamente
+                      const formatted = formatDocument(value);
+                      setCustomerForm({ ...customerForm, cpf: formatted });
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                    placeholder="000.000.000-00"
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                    maxLength={18}
                   />
+                  {documentType && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {documentType === 'CPF' ? 'CPF detectado (11 dígitos)' : 'CNPJ detectado (14 dígitos)'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="md:col-span-2">

@@ -385,12 +385,12 @@ serve(async (req) => {
           tamanho: codigoLimpo.length,
         });
         
-        if (!codigoLimpo || codigoLimpo.length < 4) {
+        if (!codigoLimpo || codigoLimpo.length < 4 || codigoLimpo.length > 6) {
           console.error('❌ VALIDAÇÃO FALHOU: Código de serviço inválido');
           return new Response(
             JSON.stringify({
               success: false,
-              error: `Serviço "${service.name}" possui código fiscal inválido.\n\nO código deve ter pelo menos 4 dígitos numéricos (ex: 0101, 010101).\n\nCódigo atual: "${service.codigo_servico_municipal || 'não informado'}"\n\nConfigure em: Serviços > Editar Serviço > Dados Fiscais`,
+              error: `Serviço "${service.name}" possui código fiscal inválido.\n\nO código deve ter entre 4 e 6 dígitos numéricos.\n\n✅ Exemplos corretos:\n• 140101 (6 dígitos) - Manutenção de veículos (14.01.01) - RECOMENDADO\n• 1401 (4 dígitos) - será completado para 140100\n• 0101 (4 dígitos) - Análise de sistemas\n\nCódigo atual: "${service.codigo_servico_municipal || 'não informado'}"\n\nConfigure em: Serviços > Editar Serviço > Dados Fiscais`,
             }),
             {
               headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -478,8 +478,14 @@ serve(async (req) => {
       issqn_aliquota: firstService.issqn_aliquota,
     });
     
-    // 🔥 CORREÇÃO CRÍTICA: Código deve ter 4 ou 5 dígitos (conforme LC 116/2003 e Focus NFe)
-    const codigoServico = (firstService.codigo_servico_municipal || '').toString().replace(/\D/g, '');
+    // 🔥 CORREÇÃO CRÍTICA: Focus NFe exige EXATAMENTE 6 dígitos
+    // LC 116/2003 tem 4-5 dígitos, mas Sistema Nacional NFSe pode ter 6 dígitos (com sub-item adicional)
+    // Formato: II.SS.DD onde:
+    // - II = 2 dígitos para Item
+    // - SS = 2 dígitos para Subitem
+    // - DD = 2 dígitos para Desdobro Nacional
+    // Exemplo: 14.01.01 = 140101 (manutenção de veículos)
+    let codigoServico = (firstService.codigo_servico_municipal || '').toString().replace(/\D/g, '');
     
     console.log('🔍 Validando código de serviço:', {
       codigo_original: firstService.codigo_servico_municipal,
@@ -487,13 +493,13 @@ serve(async (req) => {
       tamanho: codigoServico.length,
     });
     
-    // Validar se tem 4 ou 5 dígitos (conforme LC 116/2003)
-    if (codigoServico.length < 4 || codigoServico.length > 5) {
-      console.error('❌ VALIDAÇÃO FALHOU: Código de serviço deve ter 4 ou 5 dígitos');
+    // Validar se tem 4, 5 ou 6 dígitos (conforme LC 116/2003 + Sistema Nacional NFSe)
+    if (!codigoServico || codigoServico.length < 4 || codigoServico.length > 6) {
+      console.error('❌ VALIDAÇÃO FALHOU: Código de serviço deve ter 4, 5 ou 6 dígitos');
       return new Response(
         JSON.stringify({
           success: false,
-          error: `Código de serviço inválido: "${firstService.codigo_servico_municipal || 'não informado'}".\n\nO código deve ter 4 ou 5 dígitos conforme LC 116/2003.\n\nExemplos corretos:\n• 0101 (4 dígitos) - Análise de sistemas\n• 1401 (4 dígitos) - Manutenção e reparação\n• 14.01 (será convertido para 1401)\n\nCódigo atual: "${codigoServico}" (${codigoServico.length} dígitos)\n\nConfigure em: Serviços > Editar Serviço > Dados Fiscais > Código de Serviço Municipal`,
+          error: `Código de serviço inválido: "${firstService.codigo_servico_municipal || 'não informado'}".\n\nO código deve ter entre 4 e 6 dígitos.\n\n✅ Exemplos corretos:\n• 140101 (6 dígitos) - Manutenção de veículos (14.01.01) - RECOMENDADO\n• 1401 (4 dígitos) - será completado para 140100\n• 0101 (4 dígitos) - Análise de sistemas\n• 14011 (5 dígitos) - será completado para 140110\n\nCódigo atual: "${codigoServico}" (${codigoServico.length} dígitos)\n\n⚠️ Para evitar erro E0310, use códigos de 6 dígitos conforme lista NFSe Nacional RJ.\n\nConfigure em: Serviços > Editar Serviço > Dados Fiscais > Código de Serviço Municipal`,
         }),
         {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -502,49 +508,51 @@ serve(async (req) => {
       );
     }
     
-    console.log('✅ Código de serviço validado:', codigoServico, '- Tamanho:', codigoServico.length, 'dígitos');
+    // ✅ COMPLETAR até 6 dígitos SOMENTE se tiver menos de 6 (exigência da Focus NFe)
+    // Exemplos:
+    // - 1401 (4 dígitos) → 140100 (completa com 2 zeros)
+    // - 14011 (5 dígitos) → 140110 (completa com 1 zero)
+    // - 140101 (6 dígitos) → 140101 (mantém como está) ✅
+    if (codigoServico.length < 6) {
+      const codigoOriginal = codigoServico;
+      codigoServico = codigoServico.padEnd(6, '0');
+      console.log(`✅ Código ajustado de ${codigoOriginal.length} para 6 dígitos: ${codigoOriginal} → ${codigoServico}`);
+    } else {
+      console.log(`✅ Código já tem 6 dígitos: ${codigoServico} (mantido como está)`);
+    }
     
-    // 🔥 CORREÇÃO E0316: Código NBS deve estar na tabela oficial da Focus NFe
-    // Lista de códigos NBS válidos para serviços automotivos
-    const codigosNBSValidos = {
-      '1160101': 'Manutenção e reparação mecânica de veículos automotores',
-      '1160102': 'Manutenção e reparação elétrica de veículos automotores',
-      '1160103': 'Manutenção e reparação de suspensão, direção e freios',
-      '1160104': 'Reparação de câmaras de ar e pneumáticos',
-      '1160105': 'Serviços de lavagem, polimento e similares',
-      '1160199': 'Outras atividades de manutenção e reparação de veículos',
-      '116010100': 'Serviço de manutenção automotiva (9 dígitos)',
-      '116010101': 'Manutenção mecânica (9 dígitos)',
-      '116010102': 'Manutenção elétrica (9 dígitos)',
-    };
+    console.log('✅ Código de serviço final:', codigoServico, '- Tamanho:', codigoServico.length, 'dígitos');
     
+    // 🔥 CORREÇÃO CRÍTICA: Focus NFe exige EXATAMENTE 9 dígitos para código NBS
     let codigoNBSFinal = (firstService.nbs_code || '').toString().replace(/\D/g, '');
     
     console.log('🔍 ===== VALIDANDO CÓDIGO NBS (E0316) =====');
     console.log('📋 Código NBS cadastrado:', codigoNBSFinal);
+    console.log('📋 Tamanho:', codigoNBSFinal.length, 'dígitos');
     
-    // Verificar se o código tem 7 ou 9 dígitos
-    if (codigoNBSFinal.length === 7) {
-      console.log('✅ Código NBS com 7 dígitos - formato válido');
-    } else if (codigoNBSFinal.length === 9) {
-      console.log('✅ Código NBS com 9 dígitos - formato válido');
-    } else {
-      console.log('⚠️ Código NBS com tamanho inválido:', codigoNBSFinal.length, 'dígitos');
-      // Usar código padrão mais comum (7 dígitos)
-      codigoNBSFinal = '1160101';
+    // Validar se tem pelo menos 7 dígitos
+    if (!codigoNBSFinal || codigoNBSFinal.length < 7) {
+      console.log('⚠️ Código NBS inválido ou vazio, usando padrão');
+      codigoNBSFinal = '1160101'; // Código base (7 dígitos)
       console.log('✅ Usando código NBS padrão (manutenção mecânica):', codigoNBSFinal);
     }
     
-    // Verificar se está na lista de códigos válidos
-    if (codigosNBSValidos[codigoNBSFinal]) {
-      console.log('✅ Código NBS reconhecido:', codigosNBSValidos[codigoNBSFinal]);
-    } else {
-      console.log('⚠️ Código NBS não reconhecido, usando padrão');
-      codigoNBSFinal = '1160101'; // Código mais comum para manutenção automotiva
-      console.log('✅ Código NBS ajustado para:', codigoNBSFinal);
+    // ✅ COMPLETAR até 9 dígitos (exigência da Focus NFe)
+    // Exemplos:
+    // - 1160101 (7 dígitos) → 116010100 (completa com 2 zeros)
+    // - 11601011 (8 dígitos) → 116010110 (completa com 1 zero)
+    if (codigoNBSFinal.length < 9) {
+      const codigoOriginal = codigoNBSFinal;
+      codigoNBSFinal = codigoNBSFinal.padEnd(9, '0');
+      console.log(`✅ Código NBS ajustado de ${codigoOriginal.length} para 9 dígitos: ${codigoOriginal} → ${codigoNBSFinal}`);
+    } else if (codigoNBSFinal.length > 9) {
+      // Se tiver mais de 9, truncar
+      const codigoOriginal = codigoNBSFinal;
+      codigoNBSFinal = codigoNBSFinal.substring(0, 9);
+      console.log(`✅ Código NBS truncado de ${codigoOriginal.length} para 9 dígitos: ${codigoOriginal} → ${codigoNBSFinal}`);
     }
     
-    console.log('✅ Código NBS final:', codigoNBSFinal, '(' + codigoNBSFinal.length + ' dígitos)');
+    console.log('✅ Código NBS final:', codigoNBSFinal, '(9 dígitos)');
     console.log('===== FIM DA VALIDAÇÃO NBS =====');
     
     const aliquotaIss = parseFloat(firstService.issqn_aliquota || '0');
@@ -570,7 +578,17 @@ serve(async (req) => {
     };
 
     // Data de emissão
-    const dataEmissao = new Date().toISOString().split('T')[0];
+    // ⚠️ IMPORTANTE: não usar toISOString() (UTC), pois após ~21:00 no Brasil vira "dia seguinte" e a SEFIN rejeita (E0008).
+    const getBrazilDateISO = () => {
+      // en-CA => YYYY-MM-DD
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
+    };
+    const dataEmissao = getBrazilDateISO();
 
     // Determinar regime tributário
     const optanteSimplesNacional = settings.optante_simples_nacional === true;
@@ -1049,9 +1067,9 @@ serve(async (req) => {
 
     console.log('✅ Status atualizado para: processando_autorizacao');
     
-    // 🔥 NOVO: Aguardar 3 segundos e consultar o status para pegar erros imediatamente
-    console.log('⏱️  Aguardando 3 segundos para consultar status...');
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    // 🔥 NOVO: Aguardar 5 segundos e consultar o status para pegar a autorização imediatamente
+    console.log('⏱️  Aguardando 5 segundos para consultar status...');
+    await new Promise(resolve => setTimeout(resolve, 5000));
     
     try {
       console.log('🔍 Consultando status da NFS-e na Focus NFe...');
@@ -1066,11 +1084,13 @@ serve(async (req) => {
       const statusData = await statusResponse.json();
       console.log('📥 Resposta da consulta:', JSON.stringify(statusData, null, 2));
       
-      // Verificar se tem erros
+      // 🔥 VERIFICAR STATUS DA NOTA
       let errorDetected = false;
       let errorMsg = '';
       let errorCd = '';
+      let authorized = false;
       
+      // Verificar se tem erros
       if (statusData.erros && Array.isArray(statusData.erros) && statusData.erros.length > 0) {
         errorDetected = true;
         errorMsg = statusData.erros.map((e: any) => {
@@ -1084,11 +1104,69 @@ serve(async (req) => {
         errorMsg = statusData.mensagem_sefaz || 'Erro ao autorizar NFS-e';
         errorCd = 'ERRO_AUTORIZACAO';
       }
+      // 🔥 VERIFICAR SE FOI AUTORIZADA
+      else if (statusData.status === 'autorizado') {
+        authorized = true;
+        console.log('✅ NOTA AUTORIZADA! Atualizando banco de dados...');
+        
+        // Extrair dados da nota autorizada
+        const invoiceNumber = statusData.numero || '';
+        const verificationCode = statusData.codigo_verificacao || '';
+        const pdfUrl = statusData.url || '';
+        const xmlUrl = statusData.caminho_xml_nota_fiscal || '';
+        
+        console.log('📋 Dados da nota autorizada:', {
+          numero: invoiceNumber,
+          codigo_verificacao: verificationCode,
+          url_pdf: pdfUrl,
+          url_xml: xmlUrl,
+        });
+        
+        // Atualizar banco de dados com sucesso
+        const { error: updateError } = await supabase
+          .from('service_orders')
+          .update({
+            invoice_status: 'emitida',
+            invoice_number: invoiceNumber,
+            invoice_verification_code: verificationCode,
+            invoice_pdf_url: pdfUrl,
+            invoice_xml_url: xmlUrl,
+            invoice_error: null,
+            invoice_error_code: null,
+            invoice_updated_at: new Date().toISOString(),
+          })
+          .eq('id', serviceOrderId);
+        
+        if (updateError) {
+          console.error('❌ Erro ao atualizar banco com nota autorizada:', updateError);
+        } else {
+          console.log('✅ Banco de dados atualizado com sucesso!');
+        }
+        
+        // Retornar sucesso imediatamente
+        return new Response(
+          JSON.stringify({
+            success: true,
+            message: 'NFS-e emitida e autorizada com sucesso!',
+            invoice: {
+              status: 'emitida',
+              number: invoiceNumber,
+              verificationCode: verificationCode,
+              pdfUrl: pdfUrl,
+              xmlUrl: xmlUrl,
+            },
+          }),
+          {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 200,
+          }
+        );
+      }
       
+      // Se houver erro, atualizar e retornar erro
       if (errorDetected) {
         console.log('❌ ERRO DETECTADO NA CONSULTA:', errorMsg);
         
-        // Atualizar com o erro
         await supabase
           .from('service_orders')
           .update({
@@ -1101,7 +1179,6 @@ serve(async (req) => {
         
         console.log('💾 Erro salvo no banco de dados');
         
-        // Retornar erro imediatamente
         return new Response(
           JSON.stringify({
             success: false,
@@ -1115,7 +1192,7 @@ serve(async (req) => {
         );
       }
       
-      console.log('✅ Nenhum erro detectado na consulta');
+      console.log('⏳ Nota ainda está sendo processada pela prefeitura...');
     } catch (consultError: any) {
       console.error('⚠️ Erro ao consultar status (não crítico):', consultError.message);
       // Não retornar erro, pois o webhook vai atualizar depois

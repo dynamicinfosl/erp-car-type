@@ -32,8 +32,15 @@ serve(async (req) => {
     const numero = webhookData.numero;
     const codigoVerificacao = webhookData.codigo_verificacao;
     const dataEmissao = webhookData.data_emissao;
-    const urlPdf = webhookData.url || webhookData.url_danfse;
-    const caminhoXml = webhookData.caminho_xml_nota_fiscal;
+    
+    // 🔍 LOG DETALHADO: Ver TODOS os campos relacionados a arquivos
+    console.log("🔍 CAMPOS DE ARQUIVOS NO WEBHOOK:", {
+      url: webhookData.url,
+      url_danfse: webhookData.url_danfse,
+      caminho_xml_nota_fiscal: webhookData.caminho_xml_nota_fiscal,
+      caminho_danfse: webhookData.caminho_danfse,
+      url_notificacao: webhookData.url_notificacao
+    });
     
     console.log("🔍 Campos extraídos:", {
       ref,
@@ -102,6 +109,19 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    
+    // 🔥 Buscar ambiente configurado (homologação ou produção)
+    const { data: settings } = await supabase
+      .from('system_settings')
+      .select('focus_nfe_environment')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .single();
+    
+    const environment = settings?.focus_nfe_environment || 'homologacao';
+    const focusBaseUrl = environment === 'production'
+      ? 'https://api.focusnfe.com.br'
+      : 'https://homologacao.focusnfe.com.br';
 
     console.log(`🔍 Buscando OS com invoice_reference: ${ref}`);
 
@@ -137,14 +157,63 @@ serve(async (req) => {
     // Se o status é autorizado, salva os dados da nota
     else if (status === "autorizado") {
       console.log("💾 Salvando nota autorizada no banco");
-      updateData.invoice_status = "autorizado";
+      
+      // 🔥 Construir URLs corretas usando os caminhos do webhook
+      let urlPdf = '';
+      let urlXml = '';
+      
+      // Helper para adicionar domínio se necessário
+      const ensureFullUrl = (path: string | null | undefined, base: string): string => {
+        if (!path) return '';
+        if (path.startsWith('http://') || path.startsWith('https://')) return path;
+        if (path.startsWith('/')) return `${base}${path}`;
+        return `${base}/${path}`;
+      };
+      
+      // PDF: Tentar url_danfse primeiro, senão usar caminho_danfse, senão construir
+      if (webhookData.url_danfse) {
+        urlPdf = ensureFullUrl(webhookData.url_danfse, focusBaseUrl);
+      } else if (webhookData.caminho_danfse) {
+        urlPdf = ensureFullUrl(webhookData.caminho_danfse, focusBaseUrl);
+      } else {
+        urlPdf = `${focusBaseUrl}/v2/nfse/${ref}.pdf`;
+      }
+      
+      // XML: Usar caminho_xml_nota_fiscal e adicionar domínio se necessário
+      if (webhookData.caminho_xml_nota_fiscal) {
+        urlXml = ensureFullUrl(webhookData.caminho_xml_nota_fiscal, focusBaseUrl);
+      } else {
+        urlXml = `${focusBaseUrl}/v2/nfse/${ref}.xml`;
+      }
+      
+      console.log("🔗 URLs construídas:", { 
+        urlPdf, 
+        urlXml,
+        campos_recebidos: {
+          url_danfse: webhookData.url_danfse,
+          caminho_danfse: webhookData.caminho_danfse,
+          caminho_xml_nota_fiscal: webhookData.caminho_xml_nota_fiscal
+        }
+      });
+      
+      updateData.invoice_status = "emitida";
       updateData.invoice_number = numero?.toString();
       updateData.invoice_verification_code = codigoVerificacao;
+      updateData.invoice_reference = ref;
       updateData.invoice_pdf_url = urlPdf;
-      updateData.invoice_xml_url = caminhoXml;
+      updateData.invoice_xml_url = urlXml;
       updateData.invoice_key = codigoVerificacao;
       updateData.invoice_error = null;
       updateData.invoice_error_code = null;
+      
+      console.log("✅ Dados da nota que serão salvos:", {
+        numero: numero,
+        codigo_verificacao: codigoVerificacao,
+        ref: ref,
+        pdf_url: urlPdf,
+        xml_url: urlXml,
+        environment: environment
+      });
     }
     // Se o status é erro_autorizacao ou rejeitado
     else if (status === "erro_autorizacao" || status === "rejeitado" || status === "cancelado") {

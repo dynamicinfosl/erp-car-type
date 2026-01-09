@@ -2,6 +2,39 @@ import { useEffect, useState } from 'react';
 import Sidebar from '../../components/layout/Sidebar';
 import { supabase, type Appointment, type Customer, type Vehicle } from '../../lib/supabase';
 
+// 🔥 Funções utilitárias para CPF/CNPJ
+const cleanDocument = (doc: string): string => {
+  return doc.replace(/\D/g, '');
+};
+
+const formatCPF = (cpf: string): string => {
+  const cleaned = cleanDocument(cpf);
+  if (cleaned.length !== 11) return cpf;
+  return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+};
+
+const formatCNPJ = (cnpj: string): string => {
+  const cleaned = cleanDocument(cnpj);
+  if (cleaned.length !== 14) return cnpj;
+  return cleaned.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+};
+
+const formatDocument = (doc: string): string => {
+  if (!doc) return '';
+  const cleaned = cleanDocument(doc);
+  if (cleaned.length === 11) return formatCPF(doc);
+  if (cleaned.length === 14) return formatCNPJ(doc);
+  return doc;
+};
+
+const getDocumentType = (doc: string): 'CPF' | 'CNPJ' | null => {
+  if (!doc) return null;
+  const cleaned = cleanDocument(doc);
+  if (cleaned.length === 11) return 'CPF';
+  if (cleaned.length === 14) return 'CNPJ';
+  return null;
+};
+
 type AppointmentWithDetails = Appointment & {
   customer: Customer;
   vehicle: Vehicle;
@@ -22,6 +55,7 @@ export default function Appointments() {
     notes: '',
   });
 
+  const [newCustomerDocumentType, setNewCustomerDocumentType] = useState<'CPF' | 'CNPJ' | null>(null);
   const [newCustomerForm, setNewCustomerForm] = useState({
     name: '',
     phone: '',
@@ -119,9 +153,15 @@ export default function Appointments() {
       return;
     }
 
+    // Limpar e salvar o documento sem formatação
+    const customerData = {
+      ...newCustomerForm,
+      cpf: newCustomerForm.cpf ? cleanDocument(newCustomerForm.cpf) : '',
+    };
+
     const { data, error } = await supabase
       .from('customers')
-      .insert(newCustomerForm)
+      .insert(customerData)
       .select()
       .single();
 
@@ -148,6 +188,7 @@ export default function Appointments() {
       }
 
       setShowNewCustomerModal(false);
+      setNewCustomerDocumentType(null);
       setNewCustomerForm({ 
         name: '', 
         phone: '', 
@@ -433,14 +474,36 @@ export default function Appointments() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">CPF</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CPF/CNPJ {newCustomerDocumentType && <span className="text-blue-600 text-xs">({newCustomerDocumentType})</span>}
+                  </label>
                   <input
                     type="text"
                     value={newCustomerForm.cpf}
-                    onChange={(e) => setNewCustomerForm({ ...newCustomerForm, cpf: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const cleaned = cleanDocument(value);
+                      
+                      // Limitar a 14 dígitos (tamanho máximo do CNPJ)
+                      if (cleaned.length > 14) return;
+                      
+                      // Detectar tipo automaticamente
+                      const detectedType = getDocumentType(value);
+                      setNewCustomerDocumentType(detectedType);
+                      
+                      // Formatar automaticamente
+                      const formatted = formatDocument(value);
+                      setNewCustomerForm({ ...newCustomerForm, cpf: formatted });
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                    placeholder="000.000.000-00"
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                    maxLength={18}
                   />
+                  {newCustomerDocumentType && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {newCustomerDocumentType === 'CPF' ? 'CPF detectado (11 dígitos)' : 'CNPJ detectado (14 dígitos)'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="md:col-span-2">

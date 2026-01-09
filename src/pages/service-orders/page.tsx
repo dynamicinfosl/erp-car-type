@@ -6,6 +6,39 @@ import StockAlertDialog from '../../components/common/StockAlertDialog';
 import InvoiceValidationModal from '../../components/common/InvoiceValidationModal';
 import Sidebar from '../../components/layout/Sidebar';
 
+// 🔥 Funções utilitárias para CPF/CNPJ
+const cleanDocument = (doc: string): string => {
+  return doc.replace(/\D/g, '');
+};
+
+const formatCPF = (cpf: string): string => {
+  const cleaned = cleanDocument(cpf);
+  if (cleaned.length !== 11) return cpf;
+  return cleaned.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+};
+
+const formatCNPJ = (cnpj: string): string => {
+  const cleaned = cleanDocument(cnpj);
+  if (cleaned.length !== 14) return cnpj;
+  return cleaned.replace(/(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})/, '$1.$2.$3/$4-$5');
+};
+
+const formatDocument = (doc: string): string => {
+  if (!doc) return '';
+  const cleaned = cleanDocument(doc);
+  if (cleaned.length === 11) return formatCPF(doc);
+  if (cleaned.length === 14) return formatCNPJ(doc);
+  return doc;
+};
+
+const getDocumentType = (doc: string): 'CPF' | 'CNPJ' | null => {
+  if (!doc) return null;
+  const cleaned = cleanDocument(doc);
+  if (cleaned.length === 11) return 'CPF';
+  if (cleaned.length === 14) return 'CNPJ';
+  return null;
+};
+
 interface Customer {
   id: string;
   name: string;
@@ -71,6 +104,99 @@ interface Service {
 }
 
 export default function ServiceOrders() {
+  // 🔥 Função para baixar arquivo via Edge Function dedicada
+  const downloadNFSeFile = async (
+    ref: string,
+    type: 'pdf' | 'xml',
+    numero: string,
+    customerName?: string
+  ) => {
+    try {
+      console.log('📥 Baixando arquivo:', { ref, type, numero });
+      
+      // Obter sessão para autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Sessão não encontrada. Faça login novamente.');
+      }
+      
+      // URL da Edge Function de download
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
+      const downloadUrl = `${supabaseUrl}/functions/v1/download-nfse-file`;
+      
+      console.log('🔗 URL de download:', downloadUrl);
+      console.log('📋 Parâmetros:', { fileType: type, ref });
+      
+      // Fazer requisição autenticada com corpo JSON
+      const response = await fetch(downloadUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ fileType: type, ref }),
+      });
+      
+      console.log('📡 Status da resposta:', response.status);
+      console.log('📋 Content-Type:', response.headers.get('content-type'));
+      
+      // Verificar se a resposta é JSON (erro) ou binário (arquivo)
+      const contentType = response.headers.get('content-type') || '';
+      
+      if (!response.ok || contentType.includes('application/json')) {
+        // É um erro em formato JSON - ler como texto e tentar parse
+        const errorText = await response.text();
+        console.error('❌ Erro da API (texto):', errorText);
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || 'Erro ao baixar arquivo');
+        } catch (jsonError) {
+          // Não é JSON válido, usar texto direto
+          throw new Error(errorText || 'Erro ao baixar arquivo');
+        }
+      }
+      
+      // É um arquivo binário - fazer download
+      const blob = await response.blob();
+      console.log('📦 Blob recebido:', blob.size, 'bytes');
+      
+      const blobUrl = window.URL.createObjectURL(blob);
+      
+      const sanitizeFilePart = (value?: string) => {
+        const v = (value || '').trim();
+        if (!v) return '';
+        // Remover caracteres inválidos para nomes de arquivo no Windows: <>:"/\|?* e controles
+        return v
+          .replace(/[<>:"/\\|?*\x00-\x1F]/g, '')
+          .replace(/\s+/g, ' ')
+          .replace(/\.+$/g, '')
+          .trim()
+          .slice(0, 60);
+      };
+
+      const baseId = sanitizeFilePart(numero) || sanitizeFilePart(ref) || 'NFSe';
+      const customerPart = sanitizeFilePart(customerName);
+      const downloadName = customerPart
+        ? `NFSe-${baseId}-${customerPart}.${type}`
+        : `NFSe-${baseId}.${type}`;
+
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+      
+      console.log('✅ Arquivo baixado com sucesso!');
+    } catch (error: any) {
+      console.error('❌ Erro ao baixar arquivo:', error);
+      alert(`Erro ao baixar ${type.toUpperCase()}: ${error.message}`);
+    }
+  };
+
   const [serviceOrders, setServiceOrders] = useState<ServiceOrder[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -142,6 +268,10 @@ export default function ServiceOrders() {
   const [isEmittingInvoice, setIsEmittingInvoice] = useState(false);
   const [showInvoiceValidationModal, setShowInvoiceValidationModal] = useState(false);
   const [selectedOrderForInvoice, setSelectedOrderForInvoice] = useState<string | null>(null);
+  
+  // Adicionar estado para modal de visualização da OS
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [selectedOrderForView, setSelectedOrderForView] = useState<ServiceOrder | null>(null);
 
   const [supplierProductSearch, setSupplierProductSearch] = useState('');
   const [showSupplierProductResults, setShowSupplierProductResults] = useState(false);
@@ -178,6 +308,7 @@ export default function ServiceOrders() {
     zip_code: '',
     notes: '',
   });
+  const [newCustomerDocumentType, setNewCustomerDocumentType] = useState<'CPF' | 'CNPJ' | null>(null);
 
   // Adicionar estado para newVehicleForm
   const [newVehicleForm, setNewVehicleForm] = useState({
@@ -1090,6 +1221,7 @@ export default function ServiceOrders() {
             zip_code: '',
             notes: '',
           });
+          setNewCustomerDocumentType(null);
           return;
         } else {
           showToast('Altere o telefone para cadastrar um novo cliente', 'warning');
@@ -1098,9 +1230,15 @@ export default function ServiceOrders() {
       }
 
       // Se não existe, criar novo cliente
+      // Limpar e salvar o documento sem formatação
+      const customerData = {
+        ...newCustomerForm,
+        cpf: newCustomerForm.cpf ? cleanDocument(newCustomerForm.cpf) : '',
+      };
+
       const { data, error } = await supabase
         .from('customers')
-        .insert([newCustomerForm])
+        .insert([customerData])
         .select()
         .single();
 
@@ -1118,6 +1256,7 @@ export default function ServiceOrders() {
         zip_code: '',
         notes: '',
       });
+      setNewCustomerDocumentType(null);
       setShowCustomerModal(false);
       await loadCustomers();
       setFormData({ ...formData, customer_id: data.id });
@@ -1865,13 +2004,26 @@ export default function ServiceOrders() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-end gap-3">
+                      <button
+                        onClick={() => {
+                          setSelectedOrderForView(order);
+                          setShowViewModal(true);
+                        }}
+                        className="flex flex-col items-center gap-1 p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                        title="Visualizar"
+                      >
+                        <i className="ri-eye-line text-xl"></i>
+                        <span className="text-[10px] leading-none text-blue-700">Visualizar</span>
+                      </button>
+                      
                       <button
                         onClick={() => handlePrint(order.id)}
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition cursor-pointer"
+                        className="flex flex-col items-center gap-1 p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition cursor-pointer"
                         title="Imprimir"
                       >
                         <i className="ri-printer-line text-xl"></i>
+                        <span className="text-[10px] leading-none text-gray-600">Imprimir</span>
                       </button>
                       
                       {/* Botão Emitir NF-e - Aparece quando está Entregue e Pago, mas ainda não emitiu */}
@@ -1882,7 +2034,7 @@ export default function ServiceOrders() {
                             setShowInvoiceValidationModal(true);
                           }}
                           disabled={isEmittingInvoice}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="flex flex-col items-center gap-1 p-2 text-green-600 hover:bg-green-50 rounded-lg transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Emitir NF-e"
                         >
                           {isEmittingInvoice ? (
@@ -1890,33 +2042,57 @@ export default function ServiceOrders() {
                           ) : (
                             <i className="ri-file-text-line text-xl"></i>
                           )}
+                          <span className="text-[10px] leading-none text-green-700">Emitir</span>
                         </button>
                       )}
                       
-                      {/* Botão Visualizar NF-e - Aparece quando já foi emitida */}
-                      {order.invoice_number && (
-                        <button
-                          onClick={() => window.open(order.invoice_pdf_url, '_blank')}
-                          className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
-                          title={`NF-e ${order.invoice_number} - Clique para visualizar`}
+                      {/* Botões PDF e XML da NF-e - Aparecem quando já foi emitida */}
+                      {order.invoice_number && order.invoice_reference && (
+                        <div
+                          className="flex flex-col items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 bg-gray-50"
+                          title={`Arquivos da NFSe ${order.invoice_number}`}
                         >
-                          <i className="ri-file-check-line text-xl"></i>
-                        </button>
+                          <span className="text-[10px] leading-none font-semibold text-gray-600">Nota Fiscal</span>
+
+                          <div className="flex items-end gap-2">
+                            {/* Botão PDF */}
+                            <button
+                              onClick={() => downloadNFSeFile(order.invoice_reference, 'pdf', order.invoice_number, order.customer?.name)}
+                              className="flex flex-col items-center gap-1 p-2 text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                              title={`Baixar PDF da NF-e ${order.invoice_number}`}
+                            >
+                              <i className="ri-file-pdf-line text-xl"></i>
+                              <span className="text-[10px] leading-none text-red-700">PDF</span>
+                            </button>
+                            
+                            {/* Botão XML */}
+                            <button
+                              onClick={() => downloadNFSeFile(order.invoice_reference, 'xml', order.invoice_number, order.customer?.name)}
+                              className="flex flex-col items-center gap-1 p-2 text-green-600 hover:bg-green-50 rounded-lg transition cursor-pointer"
+                              title={`Baixar XML da NF-e ${order.invoice_number}`}
+                            >
+                              <i className="ri-file-code-line text-xl"></i>
+                              <span className="text-[10px] leading-none text-green-700">XML</span>
+                            </button>
+                          </div>
+                        </div>
                       )}
                       
                       <button
                         onClick={() => handleEdit(order)}
-                        className="p-2 text-teal-600 hover:bg-teal-50 rounded-lg transition cursor-pointer"
+                        className="flex flex-col items-center gap-1 p-2 text-teal-600 hover:bg-teal-50 rounded-lg transition cursor-pointer"
                         title="Editar"
                       >
                         <i className="ri-edit-line text-xl"></i>
+                        <span className="text-[10px] leading-none text-teal-700">Editar</span>
                       </button>
                       <button
                         onClick={() => handleDelete(order.id)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                        className="flex flex-col items-center gap-1 p-2 text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
                         title="Excluir"
                       >
                         <i className="ri-delete-bin-line text-xl"></i>
+                        <span className="text-[10px] leading-none text-red-700">Excluir</span>
                       </button>
                     </div>
                   </div>
@@ -2738,13 +2914,36 @@ export default function ServiceOrders() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">CPF</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CPF/CNPJ {newCustomerDocumentType && <span className="text-teal-600 text-xs">({newCustomerDocumentType})</span>}
+                  </label>
                   <input
                     type="text"
                     value={newCustomerForm.cpf}
-                    onChange={(e) => setNewCustomerForm({ ...newCustomerForm, cpf: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const cleaned = cleanDocument(value);
+                      
+                      // Limitar a 14 dígitos (tamanho máximo do CNPJ)
+                      if (cleaned.length > 14) return;
+                      
+                      // Detectar tipo automaticamente
+                      const detectedType = getDocumentType(value);
+                      setNewCustomerDocumentType(detectedType);
+                      
+                      // Formatar automaticamente
+                      const formatted = formatDocument(value);
+                      setNewCustomerForm({ ...newCustomerForm, cpf: formatted });
+                    }}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                    placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                    maxLength={18}
                   />
+                  {newCustomerDocumentType && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {newCustomerDocumentType === 'CPF' ? 'CPF detectado (11 dígitos)' : 'CNPJ detectado (14 dígitos)'}
+                    </p>
+                  )}
                 </div>
 
                 <div className="md:col-span-2">
@@ -3230,6 +3429,285 @@ export default function ServiceOrders() {
         />
       )}
 
+      {/* Modal de Visualização da OS */}
+      {showViewModal && selectedOrderForView && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Header do Modal */}
+            <div className="sticky top-0 bg-gradient-to-r from-teal-600 to-teal-700 text-white p-6 rounded-t-xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold">Ordem de Serviço #{selectedOrderForView.id.slice(0, 8)}</h2>
+                  <p className="text-teal-100 mt-1">{formatDateTime(selectedOrderForView.created_at)}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowViewModal(false);
+                    setSelectedOrderForView(null);
+                  }}
+                  className="text-white hover:bg-white/20 rounded-lg p-2 transition cursor-pointer"
+                  title="Fechar"
+                >
+                  <i className="ri-close-line text-2xl"></i>
+                </button>
+              </div>
+            </div>
+
+            {/* Conteúdo do Modal */}
+            <div className="p-6 space-y-6">
+              {/* Informações do Cliente e Veículo */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <i className="ri-user-line text-teal-600"></i>
+                    Cliente
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Nome:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.customer?.name || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Telefone:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.customer?.phone || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">E-mail:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.customer?.email || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <i className="ri-car-line text-teal-600"></i>
+                    Veículo
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-500">Modelo:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.vehicle?.model || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Marca:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.vehicle?.brand || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Placa:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.vehicle?.plate || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Ano:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.vehicle?.year || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Cor:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.vehicle?.color || 'N/A'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status e Pagamento */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <i className="ri-information-line text-teal-600"></i>
+                    Status da OS
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {getStatusBadge(selectedOrderForView.status)}
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <i className="ri-wallet-line text-teal-600"></i>
+                    Informações de Pagamento
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-sm text-gray-600">Status:</span>
+                      <div className="mt-1">
+                        {getPaymentBadge(selectedOrderForView.payment_status)}
+                      </div>
+                    </div>
+                    {selectedOrderForView.payment_method && (
+                      <div>
+                        <span className="text-sm text-gray-600">Método de Pagamento:</span>
+                        <p className="mt-1 font-medium text-gray-900">{selectedOrderForView.payment_method}</p>
+                      </div>
+                    )}
+                    {selectedOrderForView.advance_payment > 0 && (
+                      <div>
+                        <span className="text-sm text-gray-600">Entrada/Sinal:</span>
+                        <p className="mt-1 font-semibold text-blue-600">
+                          R$ {selectedOrderForView.advance_payment.toFixed(2)}
+                        </p>
+                      </div>
+                    )}
+                    {selectedOrderForView.payment_status === 'partial' && (
+                      <div>
+                        <span className="text-sm text-gray-600">Valor Restante:</span>
+                        <p className="mt-1 font-semibold text-orange-600">
+                          R$ {((selectedOrderForView.final_amount || selectedOrderForView.total_amount) - selectedOrderForView.advance_payment).toFixed(2)}
+                        </p>
+                      </div>
+                    )}
+                    {selectedOrderForView.payment_status === 'paid' && (
+                      <div>
+                        <span className="text-sm text-gray-600">Total Pago:</span>
+                        <p className="mt-1 font-semibold text-green-600">
+                          R$ {(selectedOrderForView.final_amount || selectedOrderForView.total_amount).toFixed(2)}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Itens da OS */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <i className="ri-list-check text-teal-600"></i>
+                  Itens da Ordem de Serviço
+                </h3>
+                {selectedOrderForView.items && selectedOrderForView.items.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-300">
+                          <th className="text-left py-2 px-3 font-semibold text-gray-700">Tipo</th>
+                          <th className="text-left py-2 px-3 font-semibold text-gray-700">Descrição</th>
+                          <th className="text-center py-2 px-3 font-semibold text-gray-700">Qtd</th>
+                          <th className="text-right py-2 px-3 font-semibold text-gray-700">Valor Unit.</th>
+                          <th className="text-right py-2 px-3 font-semibold text-gray-700">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedOrderForView.items.map((item, index) => (
+                          <tr key={item.id || index} className="border-b border-gray-200">
+                            <td className="py-2 px-3">
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                item.item_type === 'product' 
+                                  ? 'bg-blue-100 text-blue-800' 
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {item.item_type === 'product' ? 'Produto' : 'Serviço'}
+                              </span>
+                            </td>
+                            <td className="py-2 px-3 font-medium text-gray-900">{item.description}</td>
+                            <td className="py-2 px-3 text-center text-gray-700">{item.quantity}</td>
+                            <td className="py-2 px-3 text-right text-gray-700">
+                              R$ {item.unit_price.toFixed(2)}
+                            </td>
+                            <td className="py-2 px-3 text-right font-semibold text-gray-900">
+                              R$ {item.total.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-center py-4">Nenhum item cadastrado</p>
+                )}
+              </div>
+
+              {/* Valores */}
+              <div className="bg-gray-50 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                  <i className="ri-calculator-line text-teal-600"></i>
+                  Resumo de Valores
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-600">Subtotal dos Itens:</span>
+                    <span className="font-semibold text-gray-900">
+                      R$ {selectedOrderForView.total_amount.toFixed(2)}
+                    </span>
+                  </div>
+                  {selectedOrderForView.discount && selectedOrderForView.discount > 0 && (
+                    <div className="flex justify-between items-center text-red-600">
+                      <span>Desconto:</span>
+                      <span className="font-semibold">
+                        - R$ {selectedOrderForView.discount.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center pt-3 border-t-2 border-gray-400">
+                    <span className="text-lg font-semibold text-gray-900">Valor Total da OS:</span>
+                    <span className="text-xl font-bold text-teal-600">
+                      R$ {(selectedOrderForView.final_amount || selectedOrderForView.total_amount).toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Observações */}
+              {selectedOrderForView.notes && (
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <i className="ri-file-text-line text-teal-600"></i>
+                    Observações
+                  </h3>
+                  <p className="text-gray-700 whitespace-pre-wrap">{selectedOrderForView.notes}</p>
+                </div>
+              )}
+
+              {/* Informações da NF-e (se existir) */}
+              {selectedOrderForView.invoice_number && (
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <i className="ri-file-list-3-line text-green-600"></i>
+                    Nota Fiscal
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div>
+                      <span className="text-gray-600">Número da NF:</span>
+                      <span className="ml-2 font-semibold text-gray-900">#{selectedOrderForView.invoice_number}</span>
+                    </div>
+                    {selectedOrderForView.invoice_status && (
+                      <div>
+                        <span className="text-gray-600">Status:</span>
+                        <span className="ml-2">
+                          {getStatusBadge(selectedOrderForView.invoice_status)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer do Modal */}
+            <div className="sticky bottom-0 bg-gray-50 border-t border-gray-200 p-4 rounded-b-xl flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  setSelectedOrderForView(null);
+                }}
+                className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition cursor-pointer whitespace-nowrap"
+              >
+                Fechar
+              </button>
+              {selectedOrderForView && (
+                <button
+                  onClick={() => {
+                    setShowViewModal(false);
+                    handlePrint(selectedOrderForView.id);
+                  }}
+                  className="px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition cursor-pointer whitespace-nowrap flex items-center gap-2"
+                >
+                  <i className="ri-printer-line"></i>
+                  Imprimir
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {showInvoiceValidationModal && selectedOrderForInvoice && (
         <InvoiceValidationModal
           serviceOrderId={selectedOrderForInvoice}
@@ -3239,45 +3717,14 @@ export default function ServiceOrders() {
           }}
           onEmit={async () => {
             try {
-              setIsEmittingInvoice(true);
-              setShowInvoiceValidationModal(false);
-
-              const { data: { session } } = await supabase.auth.getSession();
-              if (!session) {
-                throw new Error('Sessão não encontrada');
-              }
-
-              const response = await fetch(
-                `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/focus-nfe-emit-nfe-service`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${session.access_token}`,
-                  },
-                  body: JSON.stringify({ serviceOrderId: selectedOrderForInvoice }),
-                }
-              );
-
-              const result = await response.json();
-
-              if (!response.ok || !result.success) {
-                throw new Error(result.error || 'Erro ao emitir NF-e');
-              }
-
-              showToast('NF-e emitida com sucesso!', 'success');
+              // ✅ Aqui é callback de SUCESSO do modal (não deve re-emitir a nota!)
+              showToast('NF-e autorizada com sucesso!', 'success');
               loadServiceOrders();
-
-              // Abrir PDF da nota em nova aba
-              if (result.invoice?.pdf_url) {
-                window.open(result.invoice.pdf_url, '_blank');
-              }
             } catch (error: any) {
               console.error('Erro ao emitir NF-e:', error);
               showToast(error.message || 'Erro ao emitir NF-e', 'error');
             } finally {
               setIsEmittingInvoice(false);
-              setSelectedOrderForInvoice(null);
             }
           }}
         />

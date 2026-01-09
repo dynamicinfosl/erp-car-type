@@ -5,7 +5,7 @@ import { supabase } from '../../lib/supabase';
 export default function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const [expandedMenus, setExpandedMenus] = useState<string[]>(['/financial', '/settings']);
+  const [expandedMenus, setExpandedMenus] = useState<string[]>(['/financial', '/settings', '/service-orders']);
   const [logoUrl, setLogoUrl] = useState('https://static.readdy.ai/image/016995f7e8292e3ea703f912413c6e1c/55707f5ad0b973e9e1fbd88859e769d0.png');
   const [userEmail, setUserEmail] = useState<string>('');
   const [userName, setUserName] = useState<string>('');
@@ -61,7 +61,16 @@ export default function Sidebar() {
     { icon: 'ri-dashboard-line', label: 'Dashboard', path: '/dashboard', permission: 'dashboard' },
     { icon: 'ri-message-3-line', label: 'Conversas', path: '/inbox', permission: 'inbox' },
     { icon: 'ri-calendar-line', label: 'Agendamentos', path: '/appointments', permission: 'appointments' },
-    { icon: 'ri-file-list-3-line', label: 'Ordens de Serviço', path: '/service-orders', permission: 'service_orders' },
+    { 
+      icon: 'ri-file-list-3-line', 
+      label: 'Ordens de Serviço', 
+      path: '/service-orders',
+      permission: 'service_orders',
+      submenu: [
+        { label: 'Ordens de Serviço', path: '/service-orders', permission: 'service_orders' },
+        { label: 'Notas Fiscais', path: '/invoices', permission: 'service_orders' },
+      ]
+    },
     { icon: 'ri-user-line', label: 'Clientes', path: '/customers', permission: 'customers' },
     { icon: 'ri-shopping-bag-line', label: 'Produtos', path: '/products', permission: 'products' },
     { icon: 'ri-tools-line', label: 'Serviços', path: '/services', permission: 'services' },

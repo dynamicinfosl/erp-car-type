@@ -8,6 +8,7 @@ const Dashboard = lazy(() => import('../pages/dashboard/page'));
 const Inbox = lazy(() => import('../pages/inbox/page'));
 const Appointments = lazy(() => import('../pages/appointments/page'));
 const ServiceOrders = lazy(() => import('../pages/service-orders/page'));
+const Invoices = lazy(() => import('../pages/invoices/page'));
 const Customers = lazy(() => import('../pages/customers/page'));
 const Products = lazy(() => import('../pages/products/page'));
 const Services = lazy(() => import('../pages/services/page'));
@@ -57,6 +58,10 @@ const routes: RouteObject[] = [
   {
     path: '/service-orders',
     element: <ServiceOrders />,
+  },
+  {
+    path: '/invoices',
+    element: <Invoices />,
   },
   {
     path: '/customers',

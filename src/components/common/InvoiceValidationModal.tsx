@@ -40,6 +40,7 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
   const [emissionError, setEmissionError] = useState<string>('');
   const [invoiceData, setInvoiceData] = useState<any>(null);
   const [pollingInterval, setPollingInterval] = useState<any>(null);
+  const [lastConsultAt, setLastConsultAt] = useState<number>(0);
 
   useEffect(() => {
     validateInvoiceData();
@@ -196,13 +197,28 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
         servicesData?.forEach(service => {
           // Só valida se não for isento
           if (!service.isento_nfe) {
+            // 🔥 VALIDAÇÃO CÓDIGO DE SERVIÇO: 4 a 6 dígitos (LC 116/2003 + Sistema Nacional NFSe)
+            // LC 116/2003: 4-5 dígitos (ex: 1401, 14011)
+            // Sistema Nacional NFSe: pode ter sub-item adicional = 6 dígitos (ex: 140101 = 14.01.01)
             const codigo = service.codigo_servico_municipal?.replace(/\D/g, '');
             
-            if (!codigo || codigo.length !== 6) {
+            if (!codigo || codigo.length < 4 || codigo.length > 6) {
               issues.push({
                 type: 'error',
                 field: 'Serviços',
-                message: `Serviço "${service.name}" possui código fiscal inválido. O código deve ter exatamente 6 dígitos numéricos (ex: 010101). Código atual: "${service.codigo_servico_municipal || 'não informado'}"`,
+                message: `Serviço "${service.name}" possui código fiscal inválido.\n\nO código deve ter entre 4 e 6 dígitos numéricos.\n\nCódigo atual: "${service.codigo_servico_municipal || 'não informado'}"\n\n📋 Exemplos corretos:\n• 140101 (6 dígitos) - Manutenção de veículos (14.01.01) ✅ RECOMENDADO\n• 1401 (4 dígitos) - será completado para 140100\n• 0101 (4 dígitos) - Análise de sistemas\n• 14011 (5 dígitos) - será completado para 140110\n\n⚠️ Nota: Para evitar erros E0310, use códigos completos de 6 dígitos conforme a lista da NFSe Nacional RJ.\n\n📚 Consulte: https://nfsenacional.prefeitura.rio`,
+                canEdit: true,
+              });
+            }
+            
+            // 🔥 VALIDAÇÃO CÓDIGO NBS: 7 a 9 dígitos (será completado para 9)
+            const nbs = service.nbs_code?.replace(/\D/g, '');
+            
+            if (!nbs || nbs.length < 7 || nbs.length > 9) {
+              issues.push({
+                type: 'error',
+                field: 'Serviços',
+                message: `Serviço "${service.name}" possui código NBS inválido.\n\nO código deve ter entre 7 e 9 dígitos numéricos.\n\nCódigo atual: "${service.nbs_code || 'não informado'}"\n\n📋 Códigos NBS válidos para manutenção automotiva:\n• 1160101 - Manutenção mecânica (será enviado como 116010100)\n• 1160102 - Manutenção elétrica (será enviado como 116010200)\n• 1160103 - Suspensão, direção e freios (será enviado como 116010300)\n• 1160104 - Reparação de pneus (será enviado como 116010400)\n• 1160105 - Lavagem e polimento (será enviado como 116010500)\n• 1160199 - Outras manutenções (será enviado como 116019900)\n\n⚠️ Nota: O sistema completará automaticamente com zeros à direita para 9 dígitos conforme exigência da Focus NFe.`,
                 canEdit: true,
               });
             }
@@ -244,7 +260,17 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
     try {
       const { data: order, error } = await supabase
         .from('service_orders')
-        .select('invoice_status, invoice_number, invoice_key, invoice_url, invoice_pdf_url, invoice_xml_url, invoice_error')
+        .select(`
+          invoice_status,
+          invoice_number,
+          invoice_verification_code,
+          invoice_reference,
+          invoice_url,
+          invoice_pdf_url,
+          invoice_xml_url,
+          invoice_error,
+          customer:customers(name)
+        `)
         .eq('id', serviceOrderId)
         .single();
 
@@ -253,12 +279,24 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
       console.log('🔍 Status atual da nota:', order.invoice_status);
       console.log('🔍 Erro (se houver):', order.invoice_error);
 
-      if (order.invoice_status === 'autorizado') {
+      // ✅ Aceita tanto 'autorizado' quanto 'emitida'
+      if (order.invoice_status === 'autorizado' || order.invoice_status === 'emitida') {
         // Nota autorizada!
+        console.log('✅ NOTA EMITIDA COM SUCESSO!');
+        console.log('📋 Dados da nota:', {
+          numero: order.invoice_number,
+          codigo_verificacao: order.invoice_verification_code,
+          referencia: order.invoice_reference,
+          pdf: order.invoice_pdf_url,
+          xml: order.invoice_xml_url
+        });
+        
         setEmissionStep('completed');
         setInvoiceData({
           number: order.invoice_number,
-          key: order.invoice_key,
+          key: order.invoice_verification_code || order.invoice_reference,
+          reference: order.invoice_reference,
+          customerName: order.customer?.name,
           url: order.invoice_url,
           pdf_url: order.invoice_pdf_url,
           xml_url: order.invoice_xml_url,
@@ -284,6 +322,30 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
       } else if (order.invoice_status === 'processando_autorizacao') {
         // Ainda processando
         setEmissionStep('processing');
+
+        // 🔥 Fallback: se está demorando, consultar status diretamente na Focus (não depender só do webhook)
+        const now = Date.now();
+        if (!lastConsultAt || now - lastConsultAt > 15000) {
+          setLastConsultAt(now);
+          if (order.invoice_reference) {
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session?.access_token) {
+                await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/focus-nfe-consult-nfse-status`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session.access_token}`,
+                  },
+                  body: JSON.stringify({ serviceOrderId }),
+                });
+              }
+            } catch (e) {
+              // Silencioso: continua polling do banco
+              console.warn('⚠️ Falha ao consultar status na Focus (fallback):', e);
+            }
+          }
+        }
       } else if (order.invoice_error && order.invoice_error.trim() !== '') {
         // Se tem erro mas o status não foi atualizado, considerar como erro
         console.error('❌ Erro detectado sem status de erro:', order.invoice_error);
@@ -318,11 +380,20 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
       console.log('📤 Service Order ID:', serviceOrderId);
       console.log('📤 URL:', `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/focus-nfe-emit-nfe-service`);
       
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setEmissionStep('error');
+        setEmissionError('Sessão não encontrada. Faça login novamente.');
+        setIsEmitting(false);
+        return;
+      }
+
       const response = await fetch(`${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/focus-nfe-emit-nfe-service`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY}`,
+          // ✅ Usar token do usuário logado (evita inconsistências de auth)
+          'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ serviceOrderId }),
       });
@@ -476,6 +547,43 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
       }
 
       console.log('✅ Resposta indica sucesso!');
+      
+      // 🔥 Verificar se a nota já foi autorizada imediatamente (resposta direta da Edge Function)
+      if (data?.invoice?.status === 'emitida' && data?.invoice?.number) {
+        console.log('✅ NOTA JÁ AUTORIZADA IMEDIATAMENTE!');
+        console.log('📋 Dados da nota:', data.invoice);
+        
+        // Buscar dados completos incluindo customer.name
+        const { data: orderData, error: orderError } = await supabase
+          .from('service_orders')
+          .select(`
+            invoice_status,
+            invoice_number,
+            invoice_verification_code,
+            invoice_reference,
+            customer:customers(name)
+          `)
+          .eq('id', serviceOrderId)
+          .single();
+        
+        if (!orderError && orderData) {
+          setEmissionStep('completed');
+          setInvoiceData({
+            number: orderData.invoice_number || data.invoice.number,
+            key: orderData.invoice_verification_code || data.invoice.verificationCode,
+            reference: orderData.invoice_reference,
+            customerName: orderData.customer?.name,
+            url: data.invoice.pdfUrl,
+            pdf_url: data.invoice.pdfUrl,
+            xml_url: data.invoice.xmlUrl,
+          });
+          
+          // Chamar callback de sucesso
+          onEmit();
+          return;
+        }
+      }
+      
       console.log('✅ Iniciando monitoramento do status...');
 
       // Requisição aceita, agora vamos monitorar o status
@@ -519,6 +627,102 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
 
   const goToServices = () => {
     window.open('/services', '_blank');
+  };
+
+  // 🔥 Função para baixar arquivo via Edge Function dedicada (mesma lógica dos cards)
+  const downloadNFSeFile = async (
+    ref: string,
+    type: 'pdf' | 'xml',
+    numero: string,
+    customerName?: string
+  ) => {
+    try {
+      console.log('📥 Baixando arquivo:', { ref, type, numero });
+      
+      // Obter sessão para autenticação
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('Sessão não encontrada. Faça login novamente.');
+      }
+      
+      // URL da Edge Function de download
+      const supabaseUrl = import.meta.env.VITE_PUBLIC_SUPABASE_URL;
+      const downloadUrl = `${supabaseUrl}/functions/v1/download-nfse-file`;
+      
+      console.log('🔗 URL de download:', downloadUrl);
+      console.log('📋 Parâmetros:', { fileType: type, ref });
+      
+      // Fazer requisição autenticada com corpo JSON
+      const response = await fetch(downloadUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ fileType: type, ref }),
+      });
+      
+      console.log('📡 Status da resposta:', response.status);
+      console.log('📋 Content-Type:', response.headers.get('content-type'));
+      
+      // Verificar se a resposta é JSON (erro) ou binário (arquivo)
+      const contentType = response.headers.get('content-type') || '';
+      
+      if (!response.ok || contentType.includes('application/json')) {
+        // É um erro em formato JSON - ler como texto e tentar parse
+        const errorText = await response.text();
+        console.error('❌ Erro da API (texto):', errorText);
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || 'Erro ao baixar arquivo');
+        } catch (jsonError) {
+          // Não é JSON válido, usar texto direto
+          throw new Error(errorText || 'Erro ao baixar arquivo');
+        }
+      }
+      
+      // É um arquivo binário - fazer download
+      const blob = await response.blob();
+      console.log('📦 Blob recebido:', blob.size, 'bytes');
+      
+      if (blob.size < 100) {
+        // Arquivo muito pequeno, pode ser um erro HTML/JSON
+        const text = await blob.text();
+        console.error('❌ Resposta parece ser erro:', text.substring(0, 200));
+        throw new Error('Arquivo inválido ou erro no servidor');
+      }
+      
+      // Criar URL temporária para download
+      const blobUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      
+      // Sanitizar nome do arquivo
+      const sanitizeFilePart = (str: string | undefined) => {
+        if (!str) return '';
+        return str.replace(/[\/\\:*?"<>|]/g, '').substring(0, 50).trim();
+      };
+      const baseId = sanitizeFilePart(numero) || sanitizeFilePart(ref) || 'NFSe';
+      const customerPart = sanitizeFilePart(customerName);
+      const downloadName = customerPart
+        ? `NFSe-${baseId}-${customerPart}.${type}`
+        : `NFSe-${baseId}.${type}`;
+      link.download = downloadName;
+      
+      // Disparar download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Limpar URL temporária após um tempo
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      
+      console.log('✅ Download iniciado:', downloadName);
+    } catch (error: any) {
+      console.error('❌ Erro ao baixar arquivo:', error);
+      alert(`Erro ao baixar ${type.toUpperCase()}: ${error.message || 'Erro desconhecido'}`);
+    }
   };
 
   const handleClose = () => {
@@ -630,42 +834,52 @@ export default function InvoiceValidationModal({ serviceOrderId, onClose, onEmit
                   </div>
 
                   <div className="bg-white rounded-lg p-4 mb-4">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                       <div>
-                        <p className="text-gray-600">Número da Nota</p>
-                        <p className="font-semibold text-gray-900">{invoiceData.number}</p>
+                        <p className="text-gray-600 mb-1">Número da Nota</p>
+                        <p className="font-semibold text-gray-900 text-base">{invoiceData.number || 'N/A'}</p>
                       </div>
-                      <div>
-                        <p className="text-gray-600">Código de Verificação</p>
-                        <p className="font-semibold text-gray-900">{invoiceData.key}</p>
-                      </div>
+                      {invoiceData.key && (
+                        <div>
+                          <p className="text-gray-600 mb-1">Código de Verificação</p>
+                          <p className="font-semibold text-gray-900 text-base break-all">{invoiceData.key}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  <div className="flex gap-3">
-                    {invoiceData.pdf_url && (
-                      <a
-                        href={invoiceData.pdf_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition cursor-pointer text-center whitespace-nowrap flex items-center justify-center gap-2"
+                  {/* Botões de download com mesmo estilo dos cards */}
+                  {invoiceData.reference && (
+                    <div className="flex items-center justify-center gap-4">
+                      <div
+                        className="flex flex-col items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50"
+                        title={`Arquivos da Nota Fiscal ${invoiceData.number}`}
                       >
-                        <i className="ri-file-pdf-line text-xl"></i>
-                        Baixar PDF
-                      </a>
-                    )}
-                    {invoiceData.xml_url && (
-                      <a
-                        href={invoiceData.xml_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition cursor-pointer text-center whitespace-nowrap flex items-center justify-center gap-2"
-                      >
-                        <i className="ri-file-code-line text-xl"></i>
-                        Baixar XML
-                      </a>
-                    )}
-                  </div>
+                        <span className="text-xs leading-none font-semibold text-gray-600 mb-1">Nota Fiscal</span>
+                        <div className="flex items-end gap-3">
+                          {/* Botão PDF */}
+                          <button
+                            onClick={() => downloadNFSeFile(invoiceData.reference, 'pdf', invoiceData.number, invoiceData.customerName)}
+                            className="flex flex-col items-center gap-1 p-2 text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                            title={`Baixar PDF da NF-e ${invoiceData.number}`}
+                          >
+                            <i className="ri-file-pdf-line text-xl"></i>
+                            <span className="text-[10px] leading-none text-red-700">PDF</span>
+                          </button>
+                          
+                          {/* Botão XML */}
+                          <button
+                            onClick={() => downloadNFSeFile(invoiceData.reference, 'xml', invoiceData.number, invoiceData.customerName)}
+                            className="flex flex-col items-center gap-1 p-2 text-green-600 hover:bg-green-50 rounded-lg transition cursor-pointer"
+                            title={`Baixar XML da NF-e ${invoiceData.number}`}
+                          >
+                            <i className="ri-file-code-line text-xl"></i>
+                            <span className="text-[10px] leading-none text-green-700">XML</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
