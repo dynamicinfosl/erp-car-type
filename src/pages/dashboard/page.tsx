@@ -59,8 +59,11 @@ export default function Dashboard() {
 
       // Data atual
       const today = new Date().toISOString().split('T')[0];
-      const firstDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-      const lastDayOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+      // Build inclusive local date range (avoids timezone shifting) - mesmo padrão da página de relatórios
+      const firstDayOfMonthStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+      const lastDayOfMonthStr = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().split('T')[0];
+      const startDate = new Date(`${firstDayOfMonthStr}T00:00:00`).toISOString();
+      const endDate = new Date(`${lastDayOfMonthStr}T23:59:59.999`).toISOString();
 
       // Total de clientes
       const { count: customersCount } = await supabase
@@ -80,20 +83,28 @@ export default function Dashboard() {
         .eq('scheduled_date', today)
         .order('scheduled_date', { ascending: true });
 
-      // Receitas do mês
+      // Receitas do mês (tabela revenues) - usa campo 'date' (YYYY-MM-DD)
+      // NOTA: Vendas regulares e PDV já criam entradas automáticas em 'revenues'.
+      // Produtos vendidos dentro de OSs já estão incluídos no valor total da OS,
+      // então NÃO devemos somar OSs entregues separadamente para evitar duplicação.
+      // Usaremos apenas 'revenues' que já contém todas as receitas (vendas diretas de produtos via PDV/vendas regulares).
+      // OSs entregues só devem ser contabilizadas se criarem entradas em 'revenues' (ex: quando há sinal/adiantamento).
       const { data: revenues } = await supabase
         .from('revenues')
         .select('amount')
-        .gte('date', firstDayOfMonth)
-        .lte('date', lastDayOfMonth);
+        .gte('date', firstDayOfMonthStr)
+        .lte('date', lastDayOfMonthStr);
 
-      // Despesas do mês
+      // Despesas do mês - usa campo 'date' (YYYY-MM-DD)
       const { data: expenses } = await supabase
         .from('expenses')
         .select('amount')
-        .gte('date', firstDayOfMonth)
-        .lte('date', lastDayOfMonth);
+        .gte('date', firstDayOfMonthStr)
+        .lte('date', lastDayOfMonthStr);
 
+      // Calcular receitas totais: apenas revenues (já inclui vendas regulares, PDV e sinais de OS)
+      // NÃO somamos OSs entregues separadamente porque os produtos vendidos dentro delas
+      // já estão sendo contabilizados em revenues (via vendas diretas) ou no valor total da OS
       const totalRevenue = revenues?.reduce((sum, r) => sum + Number(r.amount), 0) || 0;
       const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
 

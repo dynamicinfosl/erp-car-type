@@ -215,7 +215,8 @@ export default function Reports() {
         osByStatus[status] = (osByStatus[status] || 0) + 1;
       });
 
-      // Calcular lucro do PDV
+      // Calcular lucro do PDV (para análise detalhada, mas não será somado ao lucro total)
+      // NOTA: Vendas do PDV já criam entradas em 'revenues', então não devemos somar o lucro separadamente
       let posSalesProfit = 0;
       posSales?.forEach((sale: any) => {
         sale.pos_sale_items?.forEach((item: any) => {
@@ -226,11 +227,14 @@ export default function Reports() {
         });
       });
 
-      // Calcular lucro das OSs (apenas produtos entregues)
+      // Calcular lucro das OSs (apenas produtos entregues) - para análise detalhada
+      // NOTA: Produtos vendidos dentro de OSs já estão incluídos no valor total da OS,
+      // e se a OS criar entrada em 'revenues', já está contabilizada. Não devemos somar separadamente.
       let osProfit = 0;
       serviceOrders?.forEach((os: any) => {
         if (os.status === 'delivered') {
           os.service_order_items?.forEach((item: any) => {
+            // Filtrar apenas produtos (não serviços)
             if (item.item_type === 'product') {
               const cost = item.cost_price || 0;
               const totalSale = item.total_price || (item.quantity * item.unit_price);
@@ -241,8 +245,12 @@ export default function Reports() {
         }
       });
 
-      // Lucro total = receitas - despesas + lucro do PDV + lucro das OSs
-      const totalProfit = totalRevenues - totalExpenses + posSalesProfit + osProfit;
+      // Lucro total = receitas - despesas
+      // NÃO somamos lucros de produtos separadamente porque:
+      // 1. Vendas do PDV já criam entradas em 'revenues' (receitas)
+      // 2. Produtos vendidos dentro de OSs já estão no valor total da OS
+      // Somar lucros separadamente causaria duplicação
+      const totalProfit = totalRevenues - totalExpenses;
 
       // Montar dados do relatório
       setReportData({

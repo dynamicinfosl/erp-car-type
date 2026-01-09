@@ -61,7 +61,7 @@ export default function ProductSalesReport() {
     { value: 'lampada', label: 'Lâmpadas' },
     { value: 'peca', label: 'Peças Diversas' },
     { value: 'acessorio', label: 'Acessórios' },
-    { value: 'servico', label: 'Serviços' },
+    // NOTA: Removido 'servico' - esta página mostra apenas PRODUTOS, não serviços
   ];
 
   useEffect(() => {
@@ -115,9 +115,12 @@ export default function ProductSalesReport() {
       // Processar dados
       const productMap = new Map<string, ProductSale>();
 
-      // Processar itens de OS
+      // Processar itens de OS - APENAS PRODUTOS (não serviços)
       osItems?.forEach((item: any) => {
-        if (!item.product_id) return;
+        // Garantir que é produto: deve ter product_id E item_type === 'product'
+        if (!item.product_id || item.item_type !== 'product') return;
+        // Garantir que não é serviço pela categoria
+        if (item.product?.category === 'servico' || item.category === 'servico') return;
 
         const key = item.product_id;
         const existing = productMap.get(key);
