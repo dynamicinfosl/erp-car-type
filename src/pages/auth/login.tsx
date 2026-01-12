@@ -8,6 +8,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [retrying, setRetrying] = useState(false);
   const [logoUrl, setLogoUrl] = useState(
     'https://static.readdy.ai/image/016995f7e8292e3ea703f912413c6e1c/55707f5ad0b973e9e1fbd88859e769d0.png'
   );
@@ -51,26 +52,72 @@ export default function LoginPage() {
     clearInvalidSession();
   }, []);
 
+  // Função auxiliar para retry de requisições
+  const retryRequest = async <T,>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    delay: number = 1000
+  ): Promise<T> => {
+    let lastError: any;
+    
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        if (i > 0) {
+          setRetrying(true);
+          setError(`Tentando novamente... (${i}/${maxRetries - 1})`);
+        }
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+        
+        // Se não for erro de rede, não tenta novamente
+        if (error?.message && !error.message.includes('NetworkError') && !error.message.includes('fetch') && !error.message.includes('CORS')) {
+          setRetrying(false);
+          throw error;
+        }
+        
+        // Se não for a última tentativa, aguarda antes de tentar novamente
+        if (i < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+        } else {
+          setRetrying(false);
+        }
+      }
+    }
+    
+    setRetrying(false);
+    throw lastError;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setRetrying(false);
 
     try {
-      // 1. Login no Supabase Auth
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: email,
-        password: password,
-      });
+      // 1. Login no Supabase Auth com retry
+      const { data: authData, error: authError } = await retryRequest(
+        () => supabase.auth.signInWithPassword({
+          email: email,
+          password: password,
+        }),
+        3, // 3 tentativas
+        1000 // 1 segundo de delay inicial
+      );
 
       if (authError) throw authError;
 
-      // 2. Buscar dados do usuário na tabela system_users
-      const { data: userData, error: userError } = await supabase
-        .from('system_users')
-        .select('*')
-        .eq('email', email)
-        .single();
+      // 2. Buscar dados do usuário na tabela system_users com retry
+      const { data: userData, error: userError } = await retryRequest(
+        () => supabase
+          .from('system_users')
+          .select('*')
+          .eq('email', email)
+          .single(),
+        3,
+        1000
+      );
 
       if (userError) {
         await supabase.auth.signOut();
@@ -137,9 +184,30 @@ export default function LoginPage() {
 
         window.REACT_APP_NAVIGATE(redirectPath);
       }
+      
+      // Reset retry state on success
+      setRetrying(false);
     } catch (err: any) {
       console.error('Erro no login:', err);
-      setError(err.message || 'Erro ao fazer login. Verifique suas credenciais.');
+      
+      // Mensagens de erro mais amigáveis
+      let errorMessage = 'Erro ao fazer login. Verifique suas credenciais.';
+      
+      if (err?.message) {
+        if (err.message.includes('NetworkError') || err.message.includes('fetch') || err.message.includes('CORS')) {
+          errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
+        } else if (err.message.includes('Invalid login credentials') || err.message.includes('Email not confirmed')) {
+          errorMessage = 'Email ou senha incorretos.';
+        } else if (err.message.includes('Usuário não encontrado')) {
+          errorMessage = 'Usuário não encontrado no sistema.';
+        } else if (err.message.includes('inativo')) {
+          errorMessage = 'Usuário inativo. Entre em contato com o administrador.';
+        } else {
+          errorMessage = err.message;
+        }
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -166,8 +234,17 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="space-y-6">
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
+            <div className={`px-4 py-3 rounded-lg text-sm ${
+              retrying 
+                ? 'bg-yellow-50 border border-yellow-200 text-yellow-700' 
+                : 'bg-red-50 border border-red-200 text-red-700'
+            }`}>
+              <div className="flex items-center gap-2">
+                {retrying && (
+                  <i className="ri-loader-4-line text-lg animate-spin"></i>
+                )}
+                <span>{error}</span>
+              </div>
             </div>
           )}
 
@@ -202,9 +279,12 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-lg"
+            className="w-full bg-gradient-to-r from-orange-500 to-orange-600 text-white py-3 rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap shadow-lg flex items-center justify-center gap-2"
           >
-            {loading ? 'Entrando...' : 'Entrar'}
+            {loading && (
+              <i className="ri-loader-4-line text-xl animate-spin"></i>
+            )}
+            {loading ? 'Conectando...' : 'Entrar'}
           </button>
         </form>
       </div>
