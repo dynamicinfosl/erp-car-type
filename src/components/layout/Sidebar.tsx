@@ -111,6 +111,7 @@ export default function Sidebar() {
         { label: 'Visão Geral', path: '/financial', permission: 'financial' },
         { label: 'Contas a Receber', path: '/financial/receivables', permission: 'financial' },
         { label: 'Contas a Pagar', path: '/financial/payables', permission: 'financial' },
+        { label: 'Gastos Diários', path: '/financial/daily-expenses', permission: 'financial' },
         { label: 'Fluxo de Caixa', path: '/financial/cash-flow', permission: 'financial' },
       ]
     },

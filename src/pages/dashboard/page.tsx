@@ -9,6 +9,7 @@ interface Stats {
   todayAppointments: number;
   monthRevenue: number;
   monthExpenses: number;
+  dailyExpenses: number;
 }
 
 interface Appointment {
@@ -44,6 +45,7 @@ export default function Dashboard() {
     todayAppointments: 0,
     monthRevenue: 0,
     monthExpenses: 0,
+    dailyExpenses: 0,
   });
   const [todayAppointments, setTodayAppointments] = useState<Appointment[]>([]);
   const [activeServiceOrders, setActiveServiceOrders] = useState<ServiceOrder[]>([]);
@@ -102,11 +104,20 @@ export default function Dashboard() {
         .gte('date', firstDayOfMonthStr)
         .lte('date', lastDayOfMonthStr);
 
+      // Gastos diários do mês
+      const { data: dailyExpensesData } = await supabase
+        .from('expenses')
+        .select('amount')
+        .eq('category', 'Gastos Diários')
+        .gte('date', firstDayOfMonthStr)
+        .lte('date', lastDayOfMonthStr);
+
       // Calcular receitas totais: apenas revenues (já inclui vendas regulares, PDV e sinais de OS)
       // NÃO somamos OSs entregues separadamente porque os produtos vendidos dentro delas
       // já estão sendo contabilizados em revenues (via vendas diretas) ou no valor total da OS
       const totalRevenue = revenues?.reduce((sum, r) => sum + Number(r.amount), 0) || 0;
       const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const totalDailyExpenses = dailyExpensesData?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
 
       setStats({
         totalCustomers: customersCount || 0,
@@ -114,6 +125,7 @@ export default function Dashboard() {
         todayAppointments: appointments?.length || 0,
         monthRevenue: totalRevenue,
         monthExpenses: totalExpenses,
+        dailyExpenses: totalDailyExpenses,
       });
 
       setTodayAppointments(appointments || []);
@@ -171,7 +183,7 @@ export default function Dashboard() {
           </div>
 
           {/* Cards de Estatísticas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
               <div className="flex items-center justify-between">
                 <div>
@@ -232,6 +244,20 @@ export default function Dashboard() {
                 </div>
                 <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                   <i className="ri-arrow-down-line text-2xl text-red-600"></i>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-200">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Gastos Diários</p>
+                  <p className="text-2xl font-bold text-orange-600 mt-1">
+                    R$ {stats.dailyExpenses.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+                <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
+                  <i className="ri-shopping-bag-2-line text-2xl text-orange-600"></i>
                 </div>
               </div>
             </div>

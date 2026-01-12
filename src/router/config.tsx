@@ -21,6 +21,7 @@ const ProductSalesReport = lazy(() => import('../pages/reports/product-sales/pag
 const Receivables = lazy(() => import('../pages/financial/receivables/page'));
 const Payables = lazy(() => import('../pages/financial/payables/page'));
 const CashFlow = lazy(() => import('../pages/financial/cash-flow/page'));
+const DailyExpenses = lazy(() => import('../pages/financial/daily-expenses/page'));
 const FinancialOverview = lazy(() => import('../pages/financial/overview/page'));
 const POS = lazy(() => import('../pages/pos/page'));
 const UsersSettings = lazy(() => import('../pages/settings/users/page'));
@@ -107,6 +108,10 @@ const routes: RouteObject[] = [
   {
     path: '/financial/cash-flow',
     element: <CashFlow />,
+  },
+  {
+    path: '/financial/daily-expenses',
+    element: <DailyExpenses />,
   },
   {
     path: '/reports',
