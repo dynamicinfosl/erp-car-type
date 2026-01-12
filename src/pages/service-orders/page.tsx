@@ -1618,12 +1618,13 @@ export default function ServiceOrders() {
   };
 
   const filteredOrders = serviceOrders.filter(order => {
+    const searchLower = searchTerm.toLowerCase();
     const matchesSearch = 
-      order.customer?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.customer?.phone.includes(searchTerm) ||
-      order.vehicle?.plate.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.vehicle?.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      order.id.toLowerCase().includes(searchTerm.toLowerCase());
+      (order.customer?.name?.toLowerCase() || '').includes(searchLower) ||
+      (order.customer?.phone || '').includes(searchTerm) ||
+      (order.vehicle?.plate?.toLowerCase() || '').includes(searchLower) ||
+      (order.vehicle?.model?.toLowerCase() || '').includes(searchLower) ||
+      (order.id?.toLowerCase() || '').includes(searchLower);
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     const matchesPayment = paymentFilter === 'all' || order.payment_status === paymentFilter;
