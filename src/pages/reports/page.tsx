@@ -41,6 +41,7 @@ export default function Reports() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [selectedMechanicId, setSelectedMechanicId] = useState('all');
 
   const formatBRL = (value: number) =>
     new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(value || 0));
@@ -393,6 +394,16 @@ export default function Reports() {
     return labels[category] || category;
   };
 
+  const visibleCommissions = selectedMechanicId === 'all'
+    ? (reportData?.commissions.byMechanic || [])
+    : (reportData?.commissions.byMechanic || []).filter((item) => item.mechanicId === selectedMechanicId);
+
+  const selectedMechanicCommission = selectedMechanicId === 'all'
+    ? null
+    : (reportData?.commissions.byMechanic || []).find((item) => item.mechanicId === selectedMechanicId) || null;
+
+  const visibleCommissionsTotal = visibleCommissions.reduce((sum, item) => sum + item.totalCommission, 0);
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar />
@@ -406,7 +417,7 @@ export default function Reports() {
           </div>
 
           <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-end gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Data Inicial
@@ -499,6 +510,23 @@ export default function Reports() {
                   />
                 </div>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Mecânico
+                </label>
+                <select
+                  value={selectedMechanicId}
+                  onChange={(e) => setSelectedMechanicId(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent min-w-[240px]"
+                >
+                  <option value="all">Todos os mecânicos</option>
+                  {(reportData?.commissions.byMechanic || []).map((item) => (
+                    <option key={item.mechanicId} value={item.mechanicId}>
+                      {item.mechanicName}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button
                 onClick={loadReports}
                 className="mt-7 px-6 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition whitespace-nowrap"
@@ -569,10 +597,12 @@ export default function Reports() {
                     <i className="ri-user-star-line text-amber-600 text-xl"></i>
                   </div>
                   <p className="text-2xl font-bold text-amber-700">
-                    {formatBRL(reportData.commissions.total)}
+                    {formatBRL(visibleCommissionsTotal)}
                   </p>
                   <p className="text-sm text-gray-600 mt-1">
-                    {formatCount(reportData.commissions.byMechanic.length)} mecânico(s) no período
+                    {selectedMechanicId === 'all'
+                      ? `${formatCount(reportData.commissions.byMechanic.length)} mecânico(s) no período`
+                      : (selectedMechanicCommission ? selectedMechanicCommission.mechanicName : 'Mecânico não encontrado')}
                   </p>
                 </div>
               </div>
@@ -651,9 +681,9 @@ export default function Reports() {
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">
                     Comissionamento por Mecânico
                   </h3>
-                  {reportData.commissions.byMechanic.length > 0 ? (
+                  {visibleCommissions.length > 0 ? (
                     <div className="space-y-3">
-                      {reportData.commissions.byMechanic.map((item: any) => (
+                      {visibleCommissions.map((item: any) => (
                         <div key={item.mechanicId} className="border border-gray-100 rounded-lg p-3">
                           <div className="flex justify-between items-start gap-3">
                             <div>
@@ -673,9 +703,43 @@ export default function Reports() {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-sm text-gray-500">Nenhum comissionamento no período selecionado.</p>
+                    <p className="text-sm text-gray-500">
+                      {selectedMechanicId === 'all'
+                        ? 'Nenhum comissionamento no período selecionado.'
+                        : 'Este mecânico não possui comissão no período selecionado.'}
+                    </p>
                   )}
                 </div>
+
+                {selectedMechanicCommission && (
+                  <div className="bg-white rounded-xl shadow-sm p-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                      Comissão do Mecânico Selecionado
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm text-gray-600">Mecânico</p>
+                        <p className="font-semibold text-gray-900">{selectedMechanicCommission.mechanicName}</p>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm text-gray-600">Total de OS</p>
+                        <p className="font-semibold text-gray-900">{formatCount(selectedMechanicCommission.ordersCount)}</p>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm text-gray-600">Base de cálculo</p>
+                        <p className="font-semibold text-gray-900">{formatBRL(selectedMechanicCommission.totalAmount)}</p>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <p className="text-sm text-gray-600">% médio</p>
+                        <p className="font-semibold text-gray-900">{Number(selectedMechanicCommission.avgPercent || 0).toFixed(1)}%</p>
+                      </div>
+                      <div className="pt-3 border-t border-gray-200 flex justify-between items-center">
+                        <p className="font-medium text-gray-900">Comissão total</p>
+                        <p className="font-bold text-amber-700">{formatBRL(selectedMechanicCommission.totalCommission)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="bg-white rounded-xl shadow-sm p-6">
                   <h3 className="text-lg font-semibold text-gray-900 mb-4">

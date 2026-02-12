@@ -111,6 +111,7 @@ interface Service {
 interface MechanicOption {
   id: string;
   name: string;
+  contact_phone?: string | null;
   role: string;
   active: boolean;
 }
@@ -338,8 +339,7 @@ export default function ServiceOrders() {
   });
   const [newMechanicForm, setNewMechanicForm] = useState({
     name: '',
-    email: '',
-    password: '',
+    phone: '',
   });
 
   useEffect(() => {
@@ -454,12 +454,24 @@ export default function ServiceOrders() {
 
   const loadMechanics = async () => {
     try {
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from('system_users')
-        .select('id, name, role, active')
+        .select('id, name, contact_phone, role, active')
         .eq('active', true)
         .in('role', ['master', 'admin', 'operator', 'cashier', 'mechanic'])
         .order('name');
+
+      // Fallback para bases que ainda não possuem contact_phone
+      if (error && (String(error.message || '').includes('contact_phone') || String(error.details || '').includes('contact_phone'))) {
+        const fallback = await supabase
+          .from('system_users')
+          .select('id, name, role, active')
+          .eq('active', true)
+          .in('role', ['master', 'admin', 'operator', 'cashier', 'mechanic'])
+          .order('name');
+        data = fallback.data as any;
+        error = fallback.error;
+      }
 
       if (error) throw error;
       setMechanics(data || []);
@@ -1433,56 +1445,61 @@ export default function ServiceOrders() {
   const handleCreateMechanic = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!newMechanicForm.name || !newMechanicForm.email || !newMechanicForm.password) {
-      showToast('Preencha nome, email e senha do mecânico', 'error');
-      return;
-    }
-
-    if (newMechanicForm.password.length < 6) {
-      showToast('A senha do mecânico deve ter pelo menos 6 caracteres', 'warning');
+    if (!newMechanicForm.name || !newMechanicForm.phone) {
+      showToast('Preencha nome e telefone do mecânico', 'error');
       return;
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const phoneDigits = newMechanicForm.phone.replace(/\D/g, '');
+      const syntheticEmail = `mechanic.${phoneDigits || Date.now()}.${Date.now()}@erp.local`;
+      const syntheticPassword = `mec_${Date.now()}`;
 
-      if (!session?.access_token) {
-        showToast('Sessão inválida. Faça login novamente para cadastrar mecânico.', 'error');
-        return;
-      }
+      let { data, error } = await supabase
+        .from('system_users')
+        .insert([{
+          name: newMechanicForm.name.trim(),
+          email: syntheticEmail,
+          password: syntheticPassword,
+          role: 'mechanic',
+          permissions: ['service_orders', 'dashboard', 'reports'],
+          active: true,
+          contact_phone: newMechanicForm.phone.trim(),
+        }])
+        .select()
+        .single();
 
-      const response = await fetch(
-        `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/create-system-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            email: newMechanicForm.email.trim(),
-            password: newMechanicForm.password,
+      // Fallback para bases sem coluna contact_phone
+      if (error && (String(error.message || '').includes('contact_phone') || String(error.details || '').includes('contact_phone'))) {
+        const fallback = await supabase
+          .from('system_users')
+          .insert([{
             name: newMechanicForm.name.trim(),
+            email: syntheticEmail,
+            password: syntheticPassword,
             role: 'mechanic',
             permissions: ['service_orders', 'dashboard', 'reports'],
             active: true,
-          }),
+          }])
+          .select()
+          .single();
+
+        data = fallback.data as any;
+        error = fallback.error;
+
+        if (!error) {
+          showToast('Mecânico criado. Para salvar telefone no banco, execute a migration de contact_phone.', 'warning');
         }
-      );
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw new Error(result?.error || 'Erro ao cadastrar mecânico');
       }
 
-      const createdMechanicId = result?.user?.id;
+      if (error) throw error;
+
+      const createdMechanicId = data?.id;
 
       setShowMechanicModal(false);
       setNewMechanicForm({
         name: '',
-        email: '',
-        password: '',
+        phone: '',
       });
 
       await loadMechanics();
@@ -1494,11 +1511,7 @@ export default function ServiceOrders() {
       showToast('Mecânico cadastrado com sucesso!', 'success');
     } catch (error: any) {
       console.error('Erro ao cadastrar mecânico:', error);
-      if (String(error?.message || '').includes('already registered')) {
-        showToast('Este e-mail já está cadastrado no sistema', 'error');
-      } else {
-        showToast(error?.message || 'Erro ao cadastrar mecânico', 'error');
-      }
+      showToast(error?.message || 'Erro ao cadastrar mecânico', 'error');
     }
   };
 
@@ -2441,7 +2454,7 @@ export default function ServiceOrders() {
                       <option value="">Não atribuído</option>
                       {mechanics.map((mechanic) => (
                         <option key={mechanic.id} value={mechanic.id}>
-                          {mechanic.name}
+                        {mechanic.name}{mechanic.contact_phone ? ` - ${mechanic.contact_phone}` : ''}
                         </option>
                       ))}
                     </select>
@@ -3450,26 +3463,13 @@ export default function ServiceOrders() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Telefone de Contato *</label>
                   <input
-                    type="email"
-                    value={newMechanicForm.email}
-                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, email: e.target.value })}
+                    type="tel"
+                    value={newMechanicForm.phone}
+                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, phone: e.target.value })}
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                    placeholder="mecanico@oficina.com"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Senha *</label>
-                  <input
-                    type="password"
-                    value={newMechanicForm.password}
-                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, password: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                    placeholder="Mínimo 6 caracteres"
-                    minLength={6}
+                    placeholder="(00) 00000-0000"
                     required
                   />
                 </div>
