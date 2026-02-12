@@ -16,6 +16,13 @@ interface Product {
   active: boolean;
 }
 
+interface SupabaseError {
+  code?: string;
+  message?: string;
+  details?: string;
+  hint?: string;
+}
+
 export default function Products() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,6 +64,7 @@ export default function Products() {
       const { data, error } = await supabase
         .from('products')
         .select('*')
+        .eq('active', true)
         .order('name');
 
       if (error) throw error;
@@ -133,11 +141,43 @@ export default function Products() {
         .delete()
         .eq('id', id);
 
-      if (error) throw error;
-      fetchProducts();
-    } catch (error) {
-      console.error('Erro ao excluir produto:', error);
-      alert('Erro ao excluir produto');
+      if (error) {
+        const deleteError = error as SupabaseError;
+
+        // Se o produto já foi usado em vendas/ordens, em vez de excluir fisicamente,
+        // apenas inativamos para preservar o histórico.
+        if (deleteError.code === '23503') {
+          const { error: updateError } = await supabase
+            .from('products')
+            .update({ active: false })
+            .eq('id', id);
+
+          if (updateError) throw updateError;
+
+          alert('Produto vinculado a movimentações. Ele foi inativado e removido da lista.');
+          setProducts((prev) => prev.filter((product) => product.id !== id));
+          return;
+        }
+
+        throw error;
+      }
+
+      setProducts((prev) => prev.filter((product) => product.id !== id));
+    } catch (error: unknown) {
+      const supabaseError = error as SupabaseError;
+      const errorDetails = [supabaseError.message, supabaseError.details, supabaseError.hint]
+        .filter(Boolean)
+        .join(' | ');
+
+      console.error('Erro ao excluir produto:', {
+        code: supabaseError.code,
+        message: supabaseError.message,
+        details: supabaseError.details,
+        hint: supabaseError.hint,
+        raw: error,
+      });
+
+      alert(errorDetails ? `Erro ao excluir produto: ${errorDetails}` : 'Erro ao excluir produto');
     }
   };
 

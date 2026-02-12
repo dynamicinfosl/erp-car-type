@@ -23,6 +23,17 @@ interface ReportData {
     total: number;
     byCategory: { category: string; total: number }[];
   };
+  commissions: {
+    total: number;
+    byMechanic: {
+      mechanicId: string;
+      mechanicName: string;
+      ordersCount: number;
+      totalAmount: number;
+      avgPercent: number;
+      totalCommission: number;
+    }[];
+  };
   profit: number;
 }
 
@@ -165,6 +176,14 @@ export default function Reports() {
 
       if (osError) throw osError;
 
+      // Buscar nomes dos mecânicos para o relatório de comissões
+      const { data: mechanicsData, error: mechanicsError } = await supabase
+        .from('system_users')
+        .select('id, name');
+
+      if (mechanicsError) throw mechanicsError;
+      const mechanicNameById = new Map((mechanicsData || []).map((m: any) => [m.id, m.name]));
+
       // Calcular totais de receitas
       const totalRevenues = revenues?.reduce((sum, r) => sum + r.amount, 0) || 0;
       
@@ -214,6 +233,58 @@ export default function Reports() {
         const status = os.status || 'in_diagnosis';
         osByStatus[status] = (osByStatus[status] || 0) + 1;
       });
+
+      // Comissionamento por mecânico
+      const commissionByMechanic: Record<string, {
+        mechanicId: string;
+        mechanicName: string;
+        ordersCount: number;
+        totalAmount: number;
+        percentSum: number;
+        totalCommission: number;
+      }> = {};
+
+      serviceOrders?.forEach((os: any) => {
+        const mechanicId = os.mechanic_id;
+        if (!mechanicId) return;
+
+        const totalAmount = Number(parseFloat(os.final_amount || os.total_amount) || 0);
+        const percent = Number(os.commission_percent || 0);
+        const commissionAmount = Number(
+          os.commission_amount != null
+            ? os.commission_amount
+            : (totalAmount * percent) / 100
+        );
+
+        if (!commissionByMechanic[mechanicId]) {
+          commissionByMechanic[mechanicId] = {
+            mechanicId,
+            mechanicName: mechanicNameById.get(mechanicId) || 'Mecânico não encontrado',
+            ordersCount: 0,
+            totalAmount: 0,
+            percentSum: 0,
+            totalCommission: 0,
+          };
+        }
+
+        commissionByMechanic[mechanicId].ordersCount += 1;
+        commissionByMechanic[mechanicId].totalAmount += totalAmount;
+        commissionByMechanic[mechanicId].percentSum += percent;
+        commissionByMechanic[mechanicId].totalCommission += commissionAmount;
+      });
+
+      const commissionsByMechanic = Object.values(commissionByMechanic)
+        .map((item) => ({
+          mechanicId: item.mechanicId,
+          mechanicName: item.mechanicName,
+          ordersCount: item.ordersCount,
+          totalAmount: item.totalAmount,
+          avgPercent: item.ordersCount > 0 ? item.percentSum / item.ordersCount : 0,
+          totalCommission: item.totalCommission,
+        }))
+        .sort((a, b) => b.totalCommission - a.totalCommission);
+
+      const totalCommissions = commissionsByMechanic.reduce((sum, item) => sum + item.totalCommission, 0);
 
       // Calcular lucro do PDV (para análise detalhada, mas não será somado ao lucro total)
       // NOTA: Vendas do PDV já criam entradas em 'revenues', então não devemos somar o lucro separadamente
@@ -284,6 +355,10 @@ export default function Reports() {
             category,
             total,
           })),
+        },
+        commissions: {
+          total: totalCommissions,
+          byMechanic: commissionsByMechanic,
         },
         profit: totalProfit,
       });
@@ -487,6 +562,19 @@ export default function Reports() {
                     {formatBRL(reportData.sales.total)}
                   </p>
                 </div>
+
+                <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-sm font-medium text-gray-600">Comissões</h3>
+                    <i className="ri-user-star-line text-amber-600 text-xl"></i>
+                  </div>
+                  <p className="text-2xl font-bold text-amber-700">
+                    {formatBRL(reportData.commissions.total)}
+                  </p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {formatCount(reportData.commissions.byMechanic.length)} mecânico(s) no período
+                  </p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -557,6 +645,36 @@ export default function Reports() {
                       </p>
                     </div>
                   </div>
+                </div>
+
+                <div className="bg-white rounded-xl shadow-sm p-6">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                    Comissionamento por Mecânico
+                  </h3>
+                  {reportData.commissions.byMechanic.length > 0 ? (
+                    <div className="space-y-3">
+                      {reportData.commissions.byMechanic.map((item: any) => (
+                        <div key={item.mechanicId} className="border border-gray-100 rounded-lg p-3">
+                          <div className="flex justify-between items-start gap-3">
+                            <div>
+                              <p className="font-medium text-gray-900">{item.mechanicName}</p>
+                              <p className="text-sm text-gray-600">
+                                {formatCount(item.ordersCount)} OS • Média {Number(item.avgPercent || 0).toFixed(1)}%
+                              </p>
+                              <p className="text-xs text-gray-500">
+                                Base: {formatBRL(item.totalAmount)}
+                              </p>
+                            </div>
+                            <p className="font-semibold text-amber-700">
+                              {formatBRL(item.totalCommission)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-500">Nenhum comissionamento no período selecionado.</p>
+                  )}
                 </div>
 
                 <div className="bg-white rounded-xl shadow-sm p-6">

@@ -78,6 +78,10 @@ interface ServiceOrder {
   id: string;
   customer_id: string;
   vehicle_id: string;
+  mechanic_id?: string | null;
+  mechanic_name?: string;
+  commission_percent?: number;
+  commission_amount?: number;
   status: string;
   payment_status: string;
   total_amount: number;
@@ -102,6 +106,13 @@ interface Service {
   id: string;
   name: string;
   price: number;
+}
+
+interface MechanicOption {
+  id: string;
+  name: string;
+  role: string;
+  active: boolean;
 }
 
 export default function ServiceOrders() {
@@ -203,6 +214,7 @@ export default function ServiceOrders() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showVehicleModal, setShowVehicleModal] = useState(false);
@@ -219,6 +231,8 @@ export default function ServiceOrders() {
   const [formData, setFormData] = useState({
     customer_id: '',
     vehicle_id: '',
+    mechanic_id: '',
+    commission_percent: 0,
     status: 'in_diagnosis',
     payment_status: 'pending',
     total_amount: 0,
@@ -327,6 +341,7 @@ export default function ServiceOrders() {
     loadCustomers();
     loadProducts();
     loadServices();
+    loadMechanics();
   }, []);
 
   useEffect(() => {
@@ -348,6 +363,12 @@ export default function ServiceOrders() {
 
       if (error) throw error;
 
+      const { data: mechanicsData } = await supabase
+        .from('system_users')
+        .select('id, name')
+        .eq('active', true);
+      const mechanicById = new Map((mechanicsData || []).map((m: any) => [m.id, m.name]));
+
       const ordersWithItems = await Promise.all(
         (data || []).map(async (order) => {
           const { data: itemsData } = await supabase
@@ -357,6 +378,7 @@ export default function ServiceOrders() {
 
           return {
             ...order,
+            mechanic_name: order.mechanic_id ? mechanicById.get(order.mechanic_id) || 'Mecânico não encontrado' : '',
             items: itemsData || [],
           };
         })
@@ -421,6 +443,22 @@ export default function ServiceOrders() {
       setServices(data || []);
     } catch (error) {
       console.error('Erro ao carregar serviços:', error);
+    }
+  };
+
+  const loadMechanics = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('system_users')
+        .select('id, name, role, active')
+        .eq('active', true)
+        .in('role', ['master', 'admin', 'operator', 'cashier', 'mechanic'])
+        .order('name');
+
+      if (error) throw error;
+      setMechanics(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar mecânicos:', error);
     }
   };
 
@@ -718,6 +756,24 @@ export default function ServiceOrders() {
     setToast({ message, type });
   };
 
+  const isMissingCommissionColumnsError = (error: any) => {
+    const message = String(error?.message || '');
+    const details = String(error?.details || '');
+    return (
+      message.includes('mechanic_id') ||
+      message.includes('commission_percent') ||
+      message.includes('commission_amount') ||
+      details.includes('mechanic_id') ||
+      details.includes('commission_percent') ||
+      details.includes('commission_amount')
+    );
+  };
+
+  const withoutMechanicCommissionFields = (payload: any) => {
+    const { mechanic_id, commission_percent, commission_amount, ...rest } = payload;
+    return rest;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -746,6 +802,9 @@ export default function ServiceOrders() {
       const orderData = {
         customer_id: formData.customer_id,
         vehicle_id: formData.vehicle_id,
+        mechanic_id: formData.mechanic_id || null,
+        commission_percent: formData.commission_percent || 0,
+        commission_amount: (totalAmount * (formData.commission_percent || 0)) / 100,
         status: formData.status,
         payment_status: paymentStatus,
         total_amount: totalAmount,
@@ -756,10 +815,21 @@ export default function ServiceOrders() {
       let orderId: string;
 
       if (editingOrder) {
-        const { error } = await supabase
+        let { error } = await supabase
           .from('service_orders')
           .update(orderData)
           .eq('id', editingOrder.id);
+
+        if (error && isMissingCommissionColumnsError(error)) {
+          const fallback = await supabase
+            .from('service_orders')
+            .update(withoutMechanicCommissionFields(orderData))
+            .eq('id', editingOrder.id);
+          error = fallback.error;
+          if (!error) {
+            showToast('OS salva sem campos de comissão. Execute a migration para habilitar o comissionamento.', 'warning');
+          }
+        }
 
         if (error) throw error;
 
@@ -770,11 +840,24 @@ export default function ServiceOrders() {
 
         orderId = editingOrder.id;
       } else {
-        const { data, error } = await supabase
+        let { data, error } = await supabase
           .from('service_orders')
           .insert([orderData])
           .select()
           .single();
+
+        if (error && isMissingCommissionColumnsError(error)) {
+          const fallback = await supabase
+            .from('service_orders')
+            .insert([withoutMechanicCommissionFields(orderData)])
+            .select()
+            .single();
+          data = fallback.data;
+          error = fallback.error;
+          if (!error) {
+            showToast('OS salva sem campos de comissão. Execute a migration para habilitar o comissionamento.', 'warning');
+          }
+        }
 
         if (error) throw error;
         orderId = data.id;
@@ -874,6 +957,9 @@ export default function ServiceOrders() {
       const orderData = {
         customer_id: formData.customer_id,
         vehicle_id: formData.vehicle_id,
+        mechanic_id: formData.mechanic_id || null,
+        commission_percent: formData.commission_percent || 0,
+        commission_amount: ((calculateTotal() - (formData.advance_payment || 0) - paymentData.discount) * (formData.commission_percent || 0)) / 100,
         status: 'delivered',
         payment_status: 'paid',
         total_amount: calculateTotal(),
@@ -884,10 +970,21 @@ export default function ServiceOrders() {
         payment_method: paymentData.payment_method,
       };
 
-      const { error: updateError } = await supabase
+      let { error: updateError } = await supabase
         .from('service_orders')
         .update(orderData)
         .eq('id', editingOrder.id);
+
+      if (updateError && isMissingCommissionColumnsError(updateError)) {
+        const fallback = await supabase
+          .from('service_orders')
+          .update(withoutMechanicCommissionFields(orderData))
+          .eq('id', editingOrder.id);
+        updateError = fallback.error;
+        if (!updateError) {
+          showToast('Pagamento salvo sem campos de comissão. Execute a migration para habilitar o comissionamento.', 'warning');
+        }
+      }
 
       if (updateError) throw updateError;
 
@@ -1021,6 +1118,8 @@ export default function ServiceOrders() {
     setFormData({
       customer_id: order.customer_id,
       vehicle_id: order.vehicle_id,
+      mechanic_id: order.mechanic_id || '',
+      commission_percent: order.commission_percent || 0,
       status: order.status, // Agora vai carregar o status correto do banco (incluindo 'delivered')
       payment_status: order.payment_status,
       total_amount: order.total_amount,
@@ -1141,6 +1240,8 @@ export default function ServiceOrders() {
     setFormData({
       customer_id: '',
       vehicle_id: '',
+      mechanic_id: '',
+      commission_percent: 0,
       status: 'in_diagnosis',
       payment_status: 'pending',
       total_amount: 0,
@@ -1624,6 +1725,7 @@ export default function ServiceOrders() {
       (order.customer?.phone || '').includes(searchTerm) ||
       (order.vehicle?.plate?.toLowerCase() || '').includes(searchLower) ||
       (order.vehicle?.model?.toLowerCase() || '').includes(searchLower) ||
+      (order.mechanic_name?.toLowerCase() || '').includes(searchLower) ||
       (order.id?.toLowerCase() || '').includes(searchLower);
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
@@ -1983,6 +2085,16 @@ export default function ServiceOrders() {
                       <div className="h-12 w-px bg-gray-200"></div>
 
                       <div className="flex flex-col">
+                        <span className="text-xs text-gray-500 mb-1">Mecânico</span>
+                        <span className="font-medium text-gray-900">{order.mechanic_name || 'Não atribuído'}</span>
+                        <span className="text-sm text-gray-600">
+                          Comissão: {Number(order.commission_percent || 0).toFixed(1)}%
+                        </span>
+                      </div>
+
+                      <div className="h-12 w-px bg-gray-200"></div>
+
+                      <div className="flex flex-col">
                         <span className="text-xs text-gray-500 mb-1">Status</span>
                         {getStatusBadge(order.status)}
                       </div>
@@ -2035,6 +2147,9 @@ export default function ServiceOrders() {
                             {order.vehicle?.model} {order.vehicle?.plate ? `• ${order.vehicle.plate}` : ''}
                           </div>
                         </div>
+                        <p className="text-xs text-gray-600">
+                          Mecânico: {order.mechanic_name || 'Não atribuído'} • Comissão: {Number(order.commission_percent || 0).toFixed(1)}%
+                        </p>
                       </div>
                     </div>
 
@@ -2235,6 +2350,48 @@ export default function ServiceOrders() {
                       <i className="ri-add-line text-xl"></i>
                     </button>
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Mecânico Responsável</label>
+                  <select
+                    value={formData.mechanic_id}
+                    onChange={(e) => setFormData({ ...formData, mechanic_id: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none cursor-pointer"
+                  >
+                    <option value="">Não atribuído</option>
+                    {mechanics.map((mechanic) => (
+                      <option key={mechanic.id} value={mechanic.id}>
+                        {mechanic.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Comissão do Mecânico (%)</label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={formData.commission_percent || 0}
+                      onChange={(e) => {
+                        const value = parseFloat(e.target.value);
+                        const normalized = Number.isNaN(value) ? 0 : Math.max(0, Math.min(100, value));
+                        setFormData({ ...formData, commission_percent: normalized });
+                      }}
+                      className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                      placeholder="0,0"
+                    />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
+                  </div>
+                  {formData.commission_percent > 0 && (
+                    <p className="text-sm text-gray-600 mt-1">
+                      Comissão estimada: R$ {((calculateTotal() * formData.commission_percent) / 100).toFixed(2)}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -3551,6 +3708,19 @@ export default function ServiceOrders() {
                   </h3>
                   <div className="flex items-center gap-2">
                     {getStatusBadge(selectedOrderForView.status)}
+                  </div>
+                  <div className="mt-3 space-y-1 text-sm">
+                    <p>
+                      <span className="text-gray-600">Mecânico:</span>
+                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.mechanic_name || 'Não atribuído'}</span>
+                    </p>
+                    <p>
+                      <span className="text-gray-600">Comissão:</span>
+                      <span className="ml-2 font-medium text-gray-900">
+                        {Number(selectedOrderForView.commission_percent || 0).toFixed(1)}% (
+                        {`R$ ${Number(selectedOrderForView.commission_amount || 0).toFixed(2)}`})
+                      </span>
+                    </p>
                   </div>
                 </div>
 

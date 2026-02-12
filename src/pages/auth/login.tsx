@@ -192,19 +192,19 @@ export default function LoginPage() {
       
       // Mensagens de erro mais amigáveis
       let errorMessage = 'Erro ao fazer login. Verifique suas credenciais.';
+      const msg = err?.message ?? '';
+      const isNetworkError = msg.includes('NetworkError') || msg.includes('fetch') || msg.includes('CORS') || msg.includes('Failed to fetch') || (err?.name && err.name.includes('AuthRetryableFetchError'));
       
-      if (err?.message) {
-        if (err.message.includes('NetworkError') || err.message.includes('fetch') || err.message.includes('CORS')) {
-          errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
-        } else if (err.message.includes('Invalid login credentials') || err.message.includes('Email not confirmed')) {
-          errorMessage = 'Email ou senha incorretos.';
-        } else if (err.message.includes('Usuário não encontrado')) {
-          errorMessage = 'Usuário não encontrado no sistema.';
-        } else if (err.message.includes('inativo')) {
-          errorMessage = 'Usuário inativo. Entre em contato com o administrador.';
-        } else {
-          errorMessage = err.message;
-        }
+      if (isNetworkError) {
+        errorMessage = 'Não foi possível conectar ao servidor. Verifique: (1) sua internet, (2) se o projeto Supabase está ativo em app.supabase.com, (3) se reiniciou o app após configurar o .env (npm run dev).';
+      } else if (msg.includes('Invalid login credentials') || msg.includes('Email not confirmed')) {
+        errorMessage = 'Email ou senha incorretos.';
+      } else if (msg.includes('Usuário não encontrado')) {
+        errorMessage = 'Usuário não encontrado no sistema.';
+      } else if (msg.includes('inativo')) {
+        errorMessage = 'Usuário inativo. Entre em contato com o administrador.';
+      } else if (!isNetworkError && msg) {
+        errorMessage = msg;
       }
       
       setError(errorMessage);
