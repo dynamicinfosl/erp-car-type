@@ -13,6 +13,7 @@ const Invoices = lazy(() => import('../pages/invoices/page'));
 const Customers = lazy(() => import('../pages/customers/page'));
 const Products = lazy(() => import('../pages/products/page'));
 const Services = lazy(() => import('../pages/services/page'));
+const Mechanics = lazy(() => import('../pages/mechanics/page'));
 const Stock = lazy(() => import('../pages/stock/page'));
 const Sales = lazy(() => import('../pages/sales/page'));
 const Returns = lazy(() => import('../pages/sales/returns/page'));
@@ -76,6 +77,10 @@ const routes: RouteObject[] = [
   {
     path: '/services',
     element: <Services />,
+  },
+  {
+    path: '/mechanics',
+    element: <Mechanics />,
   },
   {
     path: '/stock',

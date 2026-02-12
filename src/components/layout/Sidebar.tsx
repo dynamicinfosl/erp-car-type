@@ -98,6 +98,7 @@ export default function Sidebar() {
     { icon: 'ri-user-line', label: 'Clientes', path: '/customers', permission: 'customers' },
     { icon: 'ri-shopping-bag-line', label: 'Produtos', path: '/products', permission: 'products' },
     { icon: 'ri-tools-line', label: 'Serviços', path: '/services', permission: 'services' },
+    { icon: 'ri-user-star-line', label: 'Mecânicos', path: '/mechanics', permission: 'mechanics' },
     { icon: 'ri-store-line', label: 'Estoque', path: '/stock', permission: 'stock' },
     { icon: 'ri-shopping-cart-line', label: 'PDV', path: '/pos', permission: 'pos' },
     { icon: 'ri-shopping-bag-3-line', label: 'Vendas', path: '/sales', permission: 'sales' },
@@ -167,6 +168,7 @@ export default function Sidebar() {
       admin: 'Administrador',
       operator: 'Operador',
       cashier: 'Caixa',
+      mechanic: 'Mecânico',
     };
     return labels[role] || role;
   };

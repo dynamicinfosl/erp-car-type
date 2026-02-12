@@ -112,6 +112,7 @@ interface MechanicOption {
   id: string;
   name: string;
   contact_phone?: string | null;
+  commission_percent?: number;
   role: string;
   active: boolean;
 }
@@ -456,18 +457,26 @@ export default function ServiceOrders() {
     try {
       let { data, error } = await supabase
         .from('system_users')
-        .select('id, name, contact_phone, role, active')
+        .select('id, name, contact_phone, commission_percent, role, active')
         .eq('active', true)
-        .in('role', ['master', 'admin', 'operator', 'cashier', 'mechanic'])
+        .eq('role', 'mechanic')
         .order('name');
 
-      // Fallback para bases que ainda não possuem contact_phone
-      if (error && (String(error.message || '').includes('contact_phone') || String(error.details || '').includes('contact_phone'))) {
+      // Fallback para bases que ainda não possuem contact_phone/commission_percent
+      if (
+        error &&
+        (
+          String(error.message || '').includes('contact_phone') ||
+          String(error.details || '').includes('contact_phone') ||
+          String(error.message || '').includes('commission_percent') ||
+          String(error.details || '').includes('commission_percent')
+        )
+      ) {
         const fallback = await supabase
           .from('system_users')
           .select('id, name, role, active')
           .eq('active', true)
-          .in('role', ['master', 'admin', 'operator', 'cashier', 'mechanic'])
+          .eq('role', 'mechanic')
           .order('name');
         data = fallback.data as any;
         error = fallback.error;
@@ -1515,6 +1524,40 @@ export default function ServiceOrders() {
     }
   };
 
+  const handleDeleteMechanic = async () => {
+    if (!formData.mechanic_id) {
+      showToast('Selecione um mecânico para excluir', 'warning');
+      return;
+    }
+
+    const mechanic = mechanics.find((m) => m.id === formData.mechanic_id);
+    const mechanicLabel = mechanic?.name || 'este mecânico';
+
+    const confirmed = confirm(
+      `Tem certeza que deseja excluir ${mechanicLabel}?\n\n` +
+      'Essa ação remove o mecânico da lista de cadastro.'
+    );
+    if (!confirmed) return;
+
+    try {
+      // Segurança extra: exclui somente usuários com role mechanic
+      const { error } = await supabase
+        .from('system_users')
+        .delete()
+        .eq('id', formData.mechanic_id)
+        .eq('role', 'mechanic');
+
+      if (error) throw error;
+
+      setFormData((prev) => ({ ...prev, mechanic_id: '' }));
+      await loadMechanics();
+      showToast('Mecânico excluído com sucesso!', 'success');
+    } catch (error: any) {
+      console.error('Erro ao excluir mecânico:', error);
+      showToast(error?.message || 'Erro ao excluir mecânico', 'error');
+    }
+  };
+
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -2448,7 +2491,15 @@ export default function ServiceOrders() {
                   <div className="flex gap-2">
                     <select
                       value={formData.mechanic_id}
-                      onChange={(e) => setFormData({ ...formData, mechanic_id: e.target.value })}
+                      onChange={(e) => {
+                        const selectedId = e.target.value;
+                        const selectedMechanic = mechanics.find((mechanic) => mechanic.id === selectedId);
+                        setFormData({
+                          ...formData,
+                          mechanic_id: selectedId,
+                          commission_percent: selectedMechanic ? Number(selectedMechanic.commission_percent || 0) : formData.commission_percent,
+                        });
+                      }}
                       className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none cursor-pointer"
                     >
                       <option value="">Não atribuído</option>
@@ -2465,6 +2516,15 @@ export default function ServiceOrders() {
                       title="Cadastrar novo mecânico"
                     >
                       <i className="ri-add-line text-xl"></i>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleDeleteMechanic}
+                      disabled={!formData.mechanic_id}
+                      className="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Excluir mecânico selecionado"
+                    >
+                      <i className="ri-delete-bin-line text-xl"></i>
                     </button>
                   </div>
                 </div>

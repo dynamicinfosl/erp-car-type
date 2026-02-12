@@ -23,6 +23,7 @@ const availablePermissions = [
   { id: 'customers', label: 'Clientes' },
   { id: 'products', label: 'Produtos' },
   { id: 'services', label: 'Serviços' },
+  { id: 'mechanics', label: 'Mecânicos' },
   { id: 'stock', label: 'Estoque' },
   { id: 'financial', label: 'Financeiro' },
   { id: 'appointments', label: 'Agendamentos' },
@@ -77,7 +78,7 @@ export default function UsersSettings() {
               email: user.email,
               name: user.email.split('@')[0],
               role: 'master',
-              permissions: ['dashboard', 'service_orders', 'sales', 'pos', 'customers', 'products', 'services', 'stock', 'financial', 'appointments', 'reports', 'settings'],
+              permissions: ['dashboard', 'service_orders', 'sales', 'pos', 'customers', 'products', 'services', 'mechanics', 'stock', 'financial', 'appointments', 'reports', 'settings'],
               active: true,
               password: 'master123', // Senha padrão inicial - usuário deve alterar depois
             }])
@@ -305,6 +306,7 @@ export default function UsersSettings() {
       admin: 'Administrador',
       operator: 'Operador',
       cashier: 'Caixa',
+      mechanic: 'Mecânico',
     };
     return labels[role] || role;
   };
@@ -315,6 +317,7 @@ export default function UsersSettings() {
       admin: 'bg-orange-100 text-orange-700',
       operator: 'bg-blue-100 text-blue-700',
       cashier: 'bg-gray-100 text-gray-700',
+      mechanic: 'bg-amber-100 text-amber-700',
     };
     return colors[role] || 'bg-gray-100 text-gray-700';
   };
@@ -487,6 +490,7 @@ export default function UsersSettings() {
                       {currentUser?.role === 'master' && <option value="admin">Administrador</option>}
                       <option value="operator">Operador</option>
                       <option value="cashier">Caixa</option>
+                      <option value="mechanic">Mecânico</option>
                     </select>
                   </div>
                 )}

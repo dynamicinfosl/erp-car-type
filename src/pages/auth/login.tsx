@@ -159,6 +159,7 @@ export default function LoginPage() {
           customers: '/customers',
           products: '/products',
           services: '/services',
+          mechanics: '/mechanics',
           stock: '/stock',
           financial: '/financial',
           appointments: '/appointments',

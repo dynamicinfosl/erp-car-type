@@ -56,6 +56,8 @@ VITE_PUBLIC_SUPABASE_ANON_KEY=sua-anon-key
 - No projeto, vá em **SQL Editor** e execute os scripts de criação das tabelas e políticas (RLS) que o sistema utiliza (clientes, veículos, ordens de serviço, vendas, produtos, estoque, financeiro, configurações da empresa, usuários etc.).
 - Para habilitar **mecânico responsável e comissionamento em ordens de serviço**, execute também o script:
   - `supabase/ADD_MECHANIC_COMMISSION.sql`
+- Para habilitar o **cadastro de mecânicos** com contato e percentual padrão de pagamento:
+  - `supabase/ADD_MECHANIC_PROFILE_FIELDS.sql`
 - As **Edge Functions** em `supabase/functions/` precisam ser implantadas no seu projeto para:
   - Criação de usuários do sistema (`create-system-user`)
   - Integração Focus NFe: emissão, consulta de status, webhook e teste de conexão (`focus-nfe-*`, `download-nfse-file`).
