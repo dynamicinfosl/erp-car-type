@@ -218,6 +218,7 @@ export default function ServiceOrders() {
   const [showModal, setShowModal] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showVehicleModal, setShowVehicleModal] = useState(false);
+  const [showMechanicModal, setShowMechanicModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<ServiceOrder | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -334,6 +335,11 @@ export default function ServiceOrders() {
     color: '',
     chassis: '',
     km: '',
+  });
+  const [newMechanicForm, setNewMechanicForm] = useState({
+    name: '',
+    email: '',
+    password: '',
   });
 
   useEffect(() => {
@@ -1424,6 +1430,78 @@ export default function ServiceOrders() {
     }
   };
 
+  const handleCreateMechanic = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!newMechanicForm.name || !newMechanicForm.email || !newMechanicForm.password) {
+      showToast('Preencha nome, email e senha do mecânico', 'error');
+      return;
+    }
+
+    if (newMechanicForm.password.length < 6) {
+      showToast('A senha do mecânico deve ter pelo menos 6 caracteres', 'warning');
+      return;
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        showToast('Sessão inválida. Faça login novamente para cadastrar mecânico.', 'error');
+        return;
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_PUBLIC_SUPABASE_URL}/functions/v1/create-system-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            email: newMechanicForm.email.trim(),
+            password: newMechanicForm.password,
+            name: newMechanicForm.name.trim(),
+            role: 'mechanic',
+            permissions: ['service_orders', 'dashboard', 'reports'],
+            active: true,
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Erro ao cadastrar mecânico');
+      }
+
+      const createdMechanicId = result?.user?.id;
+
+      setShowMechanicModal(false);
+      setNewMechanicForm({
+        name: '',
+        email: '',
+        password: '',
+      });
+
+      await loadMechanics();
+
+      if (createdMechanicId) {
+        setFormData((prev) => ({ ...prev, mechanic_id: createdMechanicId }));
+      }
+
+      showToast('Mecânico cadastrado com sucesso!', 'success');
+    } catch (error: any) {
+      console.error('Erro ao cadastrar mecânico:', error);
+      if (String(error?.message || '').includes('already registered')) {
+        showToast('Este e-mail já está cadastrado no sistema', 'error');
+      } else {
+        showToast(error?.message || 'Erro ao cadastrar mecânico', 'error');
+      }
+    }
+  };
+
   const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -2354,18 +2432,28 @@ export default function ServiceOrders() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Mecânico Responsável</label>
-                  <select
-                    value={formData.mechanic_id}
-                    onChange={(e) => setFormData({ ...formData, mechanic_id: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none cursor-pointer"
-                  >
-                    <option value="">Não atribuído</option>
-                    {mechanics.map((mechanic) => (
-                      <option key={mechanic.id} value={mechanic.id}>
-                        {mechanic.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={formData.mechanic_id}
+                      onChange={(e) => setFormData({ ...formData, mechanic_id: e.target.value })}
+                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none cursor-pointer"
+                    >
+                      <option value="">Não atribuído</option>
+                      {mechanics.map((mechanic) => (
+                        <option key={mechanic.id} value={mechanic.id}>
+                          {mechanic.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setShowMechanicModal(true)}
+                      className="px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 transition cursor-pointer whitespace-nowrap"
+                      title="Cadastrar novo mecânico"
+                    >
+                      <i className="ri-add-line text-xl"></i>
+                    </button>
+                  </div>
                 </div>
 
                 <div>
@@ -3326,6 +3414,80 @@ export default function ServiceOrders() {
                   className="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition cursor-pointer whitespace-nowrap"
                 >
                   Criar Veículo
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showMechanicModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-gray-900">Novo Mecânico</h2>
+              <button
+                onClick={() => setShowMechanicModal(false)}
+                className="text-gray-400 hover:text-gray-600 transition cursor-pointer"
+              >
+                <i className="ri-close-line text-2xl"></i>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateMechanic} className="p-6">
+              <div className="grid grid-cols-1 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
+                  <input
+                    type="text"
+                    value={newMechanicForm.name}
+                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, name: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                    placeholder="Nome do mecânico"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email *</label>
+                  <input
+                    type="email"
+                    value={newMechanicForm.email}
+                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, email: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                    placeholder="mecanico@oficina.com"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Senha *</label>
+                  <input
+                    type="password"
+                    value={newMechanicForm.password}
+                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, password: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
+                    placeholder="Mínimo 6 caracteres"
+                    minLength={6}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-4 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setShowMechanicModal(false)}
+                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition cursor-pointer whitespace-nowrap"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition cursor-pointer whitespace-nowrap"
+                >
+                  Cadastrar Mecânico
                 </button>
               </div>
             </form>
