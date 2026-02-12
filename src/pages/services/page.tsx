@@ -17,8 +17,19 @@ interface Service {
   isento_nfe?: boolean;
 }
 
+interface MechanicCommissionSummary {
+  mechanic_id: string;
+  mechanic_name: string;
+  contact_phone?: string;
+  paid_orders_count: number;
+  paid_orders_total: number;
+  avg_commission_percent: number;
+  commission_to_pay: number;
+}
+
 export default function Services() {
   const [services, setServices] = useState<Service[]>([]);
+  const [mechanicCommissions, setMechanicCommissions] = useState<MechanicCommissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingService, setEditingService] = useState<Service | null>(null);
@@ -57,6 +68,7 @@ export default function Services() {
 
   useEffect(() => {
     fetchServices();
+    fetchMechanicCommissions();
   }, []);
 
   const fetchServices = async () => {
@@ -72,6 +84,90 @@ export default function Services() {
       console.error('Erro ao carregar serviços:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchMechanicCommissions = async () => {
+    try {
+      const { data: orders, error: ordersError } = await supabase
+        .from('service_orders')
+        .select('mechanic_id, payment_status, total_amount, final_amount, commission_percent, commission_amount')
+        .eq('payment_status', 'paid');
+
+      if (ordersError) throw ordersError;
+
+      let { data: mechanics, error: mechanicsError } = await supabase
+        .from('system_users')
+        .select('id, name, contact_phone')
+        .eq('role', 'mechanic');
+
+      if (mechanicsError && String(mechanicsError.message || '').includes('contact_phone')) {
+        const fallback = await supabase
+          .from('system_users')
+          .select('id, name')
+          .eq('role', 'mechanic');
+        mechanics = fallback.data as any;
+        mechanicsError = fallback.error as any;
+      }
+
+      if (mechanicsError) throw mechanicsError;
+
+      const mechanicById = new Map((mechanics || []).map((m: any) => [m.id, m]));
+      const grouped: Record<string, {
+        mechanic_id: string;
+        mechanic_name: string;
+        contact_phone?: string;
+        paid_orders_count: number;
+        paid_orders_total: number;
+        percent_sum: number;
+        commission_to_pay: number;
+      }> = {};
+
+      (orders || []).forEach((order: any) => {
+        if (!order.mechanic_id) return;
+
+        const mechanic = mechanicById.get(order.mechanic_id);
+        const orderTotal = Number(parseFloat(order.final_amount || order.total_amount) || 0);
+        const percent = Number(order.commission_percent || 0);
+        const commissionValue = Number(
+          order.commission_amount != null
+            ? order.commission_amount
+            : (orderTotal * percent) / 100
+        );
+
+        if (!grouped[order.mechanic_id]) {
+          grouped[order.mechanic_id] = {
+            mechanic_id: order.mechanic_id,
+            mechanic_name: mechanic?.name || 'Mecânico não encontrado',
+            contact_phone: mechanic?.contact_phone || '',
+            paid_orders_count: 0,
+            paid_orders_total: 0,
+            percent_sum: 0,
+            commission_to_pay: 0,
+          };
+        }
+
+        grouped[order.mechanic_id].paid_orders_count += 1;
+        grouped[order.mechanic_id].paid_orders_total += orderTotal;
+        grouped[order.mechanic_id].percent_sum += percent;
+        grouped[order.mechanic_id].commission_to_pay += commissionValue;
+      });
+
+      const summary = Object.values(grouped)
+        .map((item) => ({
+          mechanic_id: item.mechanic_id,
+          mechanic_name: item.mechanic_name,
+          contact_phone: item.contact_phone,
+          paid_orders_count: item.paid_orders_count,
+          paid_orders_total: item.paid_orders_total,
+          avg_commission_percent: item.paid_orders_count > 0 ? item.percent_sum / item.paid_orders_count : 0,
+          commission_to_pay: item.commission_to_pay,
+        }))
+        .sort((a, b) => b.commission_to_pay - a.commission_to_pay);
+
+      setMechanicCommissions(summary);
+    } catch (error) {
+      console.error('Erro ao carregar comissões dos mecânicos:', error);
     }
   };
 
@@ -136,6 +232,7 @@ export default function Services() {
       setShowModal(false);
       resetForm();
       await fetchServices();
+      await fetchMechanicCommissions();
       
       console.log('🔄 Serviços recarregados');
     } catch (error) {
@@ -191,6 +288,7 @@ export default function Services() {
 
       if (error) throw error;
       fetchServices();
+      fetchMechanicCommissions();
     } catch (error) {
       console.error('Erro ao excluir serviço:', error);
       alert('Erro ao excluir serviço');
@@ -272,6 +370,52 @@ export default function Services() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">Comissão dos Mecânicos (OS pagas)</h2>
+                <p className="text-sm text-gray-600">Cálculo automático baseado em ordens de serviço com pagamento confirmado</p>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-gray-500">Total a pagar</p>
+                <p className="text-xl font-bold text-amber-700">
+                  R$ {mechanicCommissions.reduce((sum, item) => sum + item.commission_to_pay, 0).toFixed(2)}
+                </p>
+              </div>
+            </div>
+
+            {mechanicCommissions.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Mecânico</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Contato</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">OS Pagas</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Base</th>
+                      <th className="px-4 py-3 text-center text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">% Médio</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase whitespace-nowrap">Comissão</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {mechanicCommissions.map((item) => (
+                      <tr key={item.mechanic_id} className="hover:bg-gray-50 transition">
+                        <td className="px-4 py-3 text-sm font-medium text-gray-900">{item.mechanic_name}</td>
+                        <td className="px-4 py-3 text-sm text-gray-700">{item.contact_phone || '-'}</td>
+                        <td className="px-4 py-3 text-sm text-center text-gray-900">{item.paid_orders_count}</td>
+                        <td className="px-4 py-3 text-sm text-right text-gray-900">R$ {item.paid_orders_total.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-sm text-center text-blue-700">{item.avg_commission_percent.toFixed(1)}%</td>
+                        <td className="px-4 py-3 text-sm text-right font-semibold text-amber-700">R$ {item.commission_to_pay.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">Sem comissões de mecânicos em OS pagas no momento.</p>
+            )}
           </div>
 
           {loading ? (

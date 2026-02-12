@@ -246,6 +246,7 @@ export default function Reports() {
       }> = {};
 
       serviceOrders?.forEach((os: any) => {
+        if (os.payment_status !== 'paid') return;
         const mechanicId = os.mechanic_id;
         if (!mechanicId) return;
 

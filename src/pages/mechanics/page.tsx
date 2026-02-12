@@ -71,7 +71,7 @@ export default function MechanicsPage() {
       const { data: deliveredOrders, error: ordersError } = await supabase
         .from('service_orders')
         .select('mechanic_id, status, total_amount, final_amount')
-        .eq('status', 'delivered');
+        .eq('payment_status', 'paid');
 
       if (ordersError) throw ordersError;
 

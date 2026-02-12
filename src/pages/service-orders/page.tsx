@@ -831,7 +831,9 @@ export default function ServiceOrders() {
         vehicle_id: formData.vehicle_id,
         mechanic_id: formData.mechanic_id || null,
         commission_percent: formData.commission_percent || 0,
-        commission_amount: (totalAmount * (formData.commission_percent || 0)) / 100,
+        commission_amount: paymentStatus === 'paid'
+          ? (totalAmount * (formData.commission_percent || 0)) / 100
+          : 0,
         status: formData.status,
         payment_status: paymentStatus,
         total_amount: totalAmount,
