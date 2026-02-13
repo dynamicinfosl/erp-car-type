@@ -22,6 +22,7 @@ export default function Mechanics() {
   const [commissions, setCommissions] = useState<CommissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [editingMechanic, setEditingMechanic] = useState<Mechanic | null>(null);
   const [formData, setFormData] = useState({ name: '', contact_phone: '' });
 
   useEffect(() => {
@@ -82,24 +83,44 @@ export default function Mechanics() {
     }
   };
 
+  const openEdit = (m: Mechanic) => {
+    setEditingMechanic(m);
+    setFormData({
+      name: m.name,
+      contact_phone: m.contact_phone || '',
+    });
+    setShowModal(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const name = formData.name.trim();
     if (!name) return;
 
     try {
-      const { error } = await supabase.from('mechanics').insert([
-        { name, contact_phone: formData.contact_phone.trim() || null },
-      ]);
-
-      if (error) throw error;
+      if (editingMechanic) {
+        const { error } = await supabase
+          .from('mechanics')
+          .update({
+            name,
+            contact_phone: formData.contact_phone.trim() || null,
+          })
+          .eq('id', editingMechanic.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('mechanics').insert([
+          { name, contact_phone: formData.contact_phone.trim() || null },
+        ]);
+        if (error) throw error;
+      }
       setShowModal(false);
+      setEditingMechanic(null);
       setFormData({ name: '', contact_phone: '' });
       await loadMechanics();
       await loadCommissions();
     } catch (error: any) {
-      console.error('Erro ao cadastrar mecânico:', error);
-      alert(error?.message || 'Erro ao cadastrar mecânico.');
+      console.error(editingMechanic ? 'Erro ao atualizar mecânico:' : 'Erro ao cadastrar mecânico:', error);
+      alert(error?.message || (editingMechanic ? 'Erro ao atualizar mecânico.' : 'Erro ao cadastrar mecânico.'));
     }
   };
 
@@ -136,6 +157,7 @@ export default function Mechanics() {
             <button
               type="button"
               onClick={() => {
+                setEditingMechanic(null);
                 setFormData({ name: '', contact_phone: '' });
                 setShowModal(true);
               }}
@@ -205,14 +227,24 @@ export default function Mechanics() {
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(m)}
-                      className="text-red-600 hover:text-red-700 text-sm font-medium cursor-pointer"
-                      title="Excluir"
-                    >
-                      <i className="ri-delete-bin-line text-lg align-middle"></i> Excluir
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(m)}
+                        className="text-orange-600 hover:text-orange-700 text-sm font-medium cursor-pointer"
+                        title="Editar"
+                      >
+                        <i className="ri-edit-line text-lg align-middle"></i> Editar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(m)}
+                        className="text-red-600 hover:text-red-700 text-sm font-medium cursor-pointer"
+                        title="Excluir"
+                      >
+                        <i className="ri-delete-bin-line text-lg align-middle"></i> Excluir
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -221,15 +253,17 @@ export default function Mechanics() {
         </div>
       </main>
 
-      {/* Modal Novo Mecânico */}
+      {/* Modal Novo / Editar Mecânico */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-md shadow-xl">
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
-              <h2 className="text-xl font-bold text-gray-900">Novo Mecânico</h2>
+              <h2 className="text-xl font-bold text-gray-900">
+                {editingMechanic ? 'Editar Mecânico' : 'Novo Mecânico'}
+              </h2>
               <button
                 type="button"
-                onClick={() => setShowModal(false)}
+                onClick={() => { setShowModal(false); setEditingMechanic(null); }}
                 className="text-gray-400 hover:text-gray-600 transition cursor-pointer"
               >
                 <i className="ri-close-line text-2xl"></i>
@@ -261,7 +295,7 @@ export default function Mechanics() {
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowModal(false)}
+                  onClick={() => { setShowModal(false); setEditingMechanic(null); }}
                   className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition cursor-pointer"
                 >
                   Cancelar
@@ -270,7 +304,7 @@ export default function Mechanics() {
                   type="submit"
                   className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition cursor-pointer"
                 >
-                  Cadastrar
+                  {editingMechanic ? 'Salvar' : 'Cadastrar'}
                 </button>
               </div>
             </form>
