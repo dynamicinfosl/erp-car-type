@@ -98,7 +98,7 @@ export default function Sidebar() {
     { icon: 'ri-user-line', label: 'Clientes', path: '/customers', permission: 'customers' },
     { icon: 'ri-shopping-bag-line', label: 'Produtos', path: '/products', permission: 'products' },
     { icon: 'ri-tools-line', label: 'Serviços', path: '/services', permission: 'services' },
-    { icon: 'ri-user-star-line', label: 'Mecânicos', path: '/mechanics', permission: 'service_orders' },
+    { icon: 'ri-team-line', label: 'Mecânicos', path: '/mechanics', permission: 'mechanics' },
     { icon: 'ri-store-line', label: 'Estoque', path: '/stock', permission: 'stock' },
     { icon: 'ri-shopping-cart-line', label: 'PDV', path: '/pos', permission: 'pos' },
     { icon: 'ri-shopping-bag-3-line', label: 'Vendas', path: '/sales', permission: 'sales' },
@@ -129,12 +129,21 @@ export default function Sidebar() {
   ];
 
   // Filtrar menus baseado nas permissões
+  const hasPermission = (permission: string) =>
+    Array.isArray(userPermissions) && userPermissions.includes(permission);
+
   const menuItems = allMenuItems.filter(item => {
     // Master tem acesso a tudo
     if (userRole === 'master') return true;
+
+    // Mecânicos: mostrar para quem tem 'mechanics' ou 'service_orders' (quem mexe em OS pode ver mecânicos)
+    if (item.permission === 'mechanics') {
+      if (hasPermission('mechanics') || hasPermission('service_orders')) return true;
+      return false;
+    }
     
     // Verificar se tem permissão para o item (permissões como array)
-    if (item.permission && Array.isArray(userPermissions) && userPermissions.includes(item.permission)) {
+    if (item.permission && hasPermission(item.permission)) {
       // Se tem submenu, filtrar os subitens também
       if (item.submenu) {
         item.submenu = item.submenu.filter(subItem => 
@@ -168,7 +177,6 @@ export default function Sidebar() {
       admin: 'Administrador',
       operator: 'Operador',
       cashier: 'Caixa',
-      mechanic: 'Mecânico',
     };
     return labels[role] || role;
   };

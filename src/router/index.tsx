@@ -107,7 +107,7 @@ function ProtectedRoute({ children, session }: { children: React.ReactNode; sess
         '/customers': 'customers',
         '/products': 'products',
         '/services': 'services',
-        '/mechanics': 'service_orders',
+        '/mechanics': 'mechanics',
         '/stock': 'stock',
         '/pos': 'pos',
         '/sales': 'sales',
@@ -136,9 +136,13 @@ function ProtectedRoute({ children, session }: { children: React.ReactNode; sess
       const permissions = userData.permissions || [];
       
       // Verifica se tem permissão (suporta tanto array quanto objeto)
-      const hasPermission = Array.isArray(permissions) 
+      let hasPermission = Array.isArray(permissions)
         ? permissions.includes(requiredPermission)
         : permissions[requiredPermission] === true;
+      // Mecânicos: aceitar também quem tem service_orders
+      if (!hasPermission && requiredPermission === 'mechanics' && Array.isArray(permissions) && permissions.includes('service_orders')) {
+        hasPermission = true;
+      }
 
       if (hasPermission) {
         setHasAccess(true);
@@ -156,7 +160,7 @@ function ProtectedRoute({ children, session }: { children: React.ReactNode; sess
         { path: '/customers', permission: 'customers' },
         { path: '/products', permission: 'products' },
         { path: '/services', permission: 'services' },
-        { path: '/mechanics', permission: 'service_orders' },
+        { path: '/mechanics', permission: 'mechanics' },
         { path: '/stock', permission: 'stock' },
         { path: '/pos', permission: 'pos' },
         { path: '/sales', permission: 'sales' },

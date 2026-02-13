@@ -74,14 +74,16 @@ interface ServiceOrderItem {
   supplier_notes?: string;
 }
 
+interface MechanicOption {
+  id: string;
+  name: string;
+  contact_phone?: string | null;
+}
+
 interface ServiceOrder {
   id: string;
   customer_id: string;
   vehicle_id: string;
-  mechanic_id?: string | null;
-  mechanic_name?: string;
-  commission_percent?: number;
-  commission_amount?: number;
   status: string;
   payment_status: string;
   total_amount: number;
@@ -94,6 +96,10 @@ interface ServiceOrder {
   discount?: number;
   final_amount?: number;
   payment_method?: string;
+  mechanic_id?: string | null;
+  mechanic?: MechanicOption | null;
+  commission_percent?: number | null;
+  commission_amount?: number | null;
 }
 
 interface Product {
@@ -106,15 +112,6 @@ interface Service {
   id: string;
   name: string;
   price: number;
-}
-
-interface MechanicOption {
-  id: string;
-  name: string;
-  contact_phone?: string | null;
-  commission_percent?: number;
-  role: string;
-  active: boolean;
 }
 
 export default function ServiceOrders() {
@@ -216,11 +213,9 @@ export default function ServiceOrders() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [services, setServices] = useState<Service[]>([]);
-  const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showVehicleModal, setShowVehicleModal] = useState(false);
-  const [showMechanicModal, setShowMechanicModal] = useState(false);
   const [editingOrder, setEditingOrder] = useState<ServiceOrder | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -231,17 +226,18 @@ export default function ServiceOrders() {
   const [searchResults, setSearchResults] = useState<Array<{id: string, name: string, price: number, type: 'product' | 'service'}>>([]);
   const [showSearchResults, setShowSearchResults] = useState(false);
 
+  const [mechanics, setMechanics] = useState<MechanicOption[]>([]);
   const [formData, setFormData] = useState({
     customer_id: '',
     vehicle_id: '',
-    mechanic_id: '',
-    commission_percent: 0,
     status: 'in_diagnosis',
     payment_status: 'pending',
     total_amount: 0,
     discount: 0,
     advance_payment: 0,
     notes: '',
+    mechanic_id: '' as string,
+    commission_percent: 0 as number,
   });
 
   const [currentItem, setCurrentItem] = useState<ServiceOrderItem>({
@@ -338,10 +334,6 @@ export default function ServiceOrders() {
     chassis: '',
     km: '',
   });
-  const [newMechanicForm, setNewMechanicForm] = useState({
-    name: '',
-    phone: '',
-  });
 
   useEffect(() => {
     loadServiceOrders();
@@ -350,6 +342,19 @@ export default function ServiceOrders() {
     loadServices();
     loadMechanics();
   }, []);
+
+  const loadMechanics = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('mechanics')
+        .select('id, name, contact_phone')
+        .order('name');
+      if (error) throw error;
+      setMechanics(data || []);
+    } catch (error) {
+      console.error('Erro ao carregar mecânicos:', error);
+    }
+  };
 
   useEffect(() => {
     if (formData.customer_id) {
@@ -364,17 +369,12 @@ export default function ServiceOrders() {
         .select(`
           *,
           customer:customers(*),
-          vehicle:vehicles(*)
+          vehicle:vehicles(*),
+          mechanic:mechanics(id, name, contact_phone)
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-
-      const { data: mechanicsData } = await supabase
-        .from('system_users')
-        .select('id, name')
-        .eq('active', true);
-      const mechanicById = new Map((mechanicsData || []).map((m: any) => [m.id, m.name]));
 
       const ordersWithItems = await Promise.all(
         (data || []).map(async (order) => {
@@ -385,7 +385,6 @@ export default function ServiceOrders() {
 
           return {
             ...order,
-            mechanic_name: order.mechanic_id ? mechanicById.get(order.mechanic_id) || 'Mecânico não encontrado' : '',
             items: itemsData || [],
           };
         })
@@ -450,42 +449,6 @@ export default function ServiceOrders() {
       setServices(data || []);
     } catch (error) {
       console.error('Erro ao carregar serviços:', error);
-    }
-  };
-
-  const loadMechanics = async () => {
-    try {
-      let { data, error } = await supabase
-        .from('system_users')
-        .select('id, name, contact_phone, commission_percent, role, active')
-        .eq('active', true)
-        .eq('role', 'mechanic')
-        .order('name');
-
-      // Fallback para bases que ainda não possuem contact_phone/commission_percent
-      if (
-        error &&
-        (
-          String(error.message || '').includes('contact_phone') ||
-          String(error.details || '').includes('contact_phone') ||
-          String(error.message || '').includes('commission_percent') ||
-          String(error.details || '').includes('commission_percent')
-        )
-      ) {
-        const fallback = await supabase
-          .from('system_users')
-          .select('id, name, role, active')
-          .eq('active', true)
-          .eq('role', 'mechanic')
-          .order('name');
-        data = fallback.data as any;
-        error = fallback.error;
-      }
-
-      if (error) throw error;
-      setMechanics(data || []);
-    } catch (error) {
-      console.error('Erro ao carregar mecânicos:', error);
     }
   };
 
@@ -724,8 +687,10 @@ export default function ServiceOrders() {
         .from('stock_movements')
         .insert([{
           product_id: stockAlertData.productId,
-          type: 'in',
+          movement_type: 'in',
           quantity: quantityToAdd,
+          unit_price: 0,
+          total_value: 0,
           reason: 'Entrada manual durante venda',
         }]);
 
@@ -783,24 +748,6 @@ export default function ServiceOrders() {
     setToast({ message, type });
   };
 
-  const isMissingCommissionColumnsError = (error: any) => {
-    const message = String(error?.message || '');
-    const details = String(error?.details || '');
-    return (
-      message.includes('mechanic_id') ||
-      message.includes('commission_percent') ||
-      message.includes('commission_amount') ||
-      details.includes('mechanic_id') ||
-      details.includes('commission_percent') ||
-      details.includes('commission_amount')
-    );
-  };
-
-  const withoutMechanicCommissionFields = (payload: any) => {
-    const { mechanic_id, commission_percent, commission_amount, ...rest } = payload;
-    return rest;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -829,36 +776,22 @@ export default function ServiceOrders() {
       const orderData = {
         customer_id: formData.customer_id,
         vehicle_id: formData.vehicle_id,
-        mechanic_id: formData.mechanic_id || null,
-        commission_percent: formData.commission_percent || 0,
-        commission_amount: paymentStatus === 'paid'
-          ? (totalAmount * (formData.commission_percent || 0)) / 100
-          : 0,
         status: formData.status,
         payment_status: paymentStatus,
         total_amount: totalAmount,
         advance_payment: formData.advance_payment || 0,
         notes: formData.notes,
+        mechanic_id: formData.mechanic_id || null,
+        commission_percent: formData.commission_percent != null ? formData.commission_percent : null,
       };
 
       let orderId: string;
 
       if (editingOrder) {
-        let { error } = await supabase
+        const { error } = await supabase
           .from('service_orders')
           .update(orderData)
           .eq('id', editingOrder.id);
-
-        if (error && isMissingCommissionColumnsError(error)) {
-          const fallback = await supabase
-            .from('service_orders')
-            .update(withoutMechanicCommissionFields(orderData))
-            .eq('id', editingOrder.id);
-          error = fallback.error;
-          if (!error) {
-            showToast('OS salva sem campos de comissão. Execute a migration para habilitar o comissionamento.', 'warning');
-          }
-        }
 
         if (error) throw error;
 
@@ -869,24 +802,11 @@ export default function ServiceOrders() {
 
         orderId = editingOrder.id;
       } else {
-        let { data, error } = await supabase
+        const { data, error } = await supabase
           .from('service_orders')
           .insert([orderData])
           .select()
           .single();
-
-        if (error && isMissingCommissionColumnsError(error)) {
-          const fallback = await supabase
-            .from('service_orders')
-            .insert([withoutMechanicCommissionFields(orderData)])
-            .select()
-            .single();
-          data = fallback.data;
-          error = fallback.error;
-          if (!error) {
-            showToast('OS salva sem campos de comissão. Execute a migration para habilitar o comissionamento.', 'warning');
-          }
-        }
 
         if (error) throw error;
         orderId = data.id;
@@ -937,14 +857,18 @@ export default function ServiceOrders() {
                 .eq('id', item.product_id);
 
               // Registrar movimentação de estoque
+              const unitPrice = Number(item.cost_price || item.unit_price || 0);
               await supabase
                 .from('stock_movements')
                 .insert([{
                   product_id: item.product_id,
-                  type: 'out',
+                  movement_type: 'out',
                   quantity: item.quantity,
-                  reason: `Ordem de Serviço #${orderId.slice(0, 8)}`,
+                  unit_price: unitPrice,
+                  total_value: (item.total || item.quantity * item.unit_price) || 0,
+                  reason: `OS #${orderId.slice(0, 8)}`,
                   reference_id: orderId,
+                  reference_type: 'service_order',
                 }]);
             }
           }
@@ -982,40 +906,92 @@ export default function ServiceOrders() {
         return;
       }
 
-      // Atualizar a OS com os novos dados
-      const orderData = {
-        customer_id: formData.customer_id,
-        vehicle_id: formData.vehicle_id,
-        mechanic_id: formData.mechanic_id || null,
-        commission_percent: formData.commission_percent || 0,
-        commission_amount: ((calculateTotal() - (formData.advance_payment || 0) - paymentData.discount) * (formData.commission_percent || 0)) / 100,
-        status: 'delivered',
-        payment_status: 'paid',
-        total_amount: calculateTotal(),
-        advance_payment: formData.advance_payment || 0,
-        notes: formData.notes,
-        discount: paymentData.discount,
-        final_amount: calculateTotal() - (formData.advance_payment || 0) - paymentData.discount,
-        payment_method: paymentData.payment_method,
-      };
+      // Evitar 409: updates em etapas (status+pago → valores → cliente/mecânico)
+      const discount = Number(paymentData.discount) || 0;
+      const paymentMethod = paymentData.payment_method || 'Dinheiro';
+      const finalAmount = calculateTotal() - (formData.advance_payment || 0) - discount;
+      const commissionPercent = Number(formData.commission_percent) || 0;
+      const commissionAmount = (finalAmount * commissionPercent) / 100;
 
-      let { error: updateError } = await supabase
+      // 1) Tentar PATCH direto em etapas
+      let updateError: any = null;
+      let { error: e1 } = await supabase
         .from('service_orders')
-        .update(orderData)
+        .update({ status: 'delivered', payment_status: 'paid' })
         .eq('id', editingOrder.id);
+      if (e1) updateError = e1;
 
-      if (updateError && isMissingCommissionColumnsError(updateError)) {
-        const fallback = await supabase
+      if (!updateError) {
+        const { error: e2 } = await supabase
           .from('service_orders')
-          .update(withoutMechanicCommissionFields(orderData))
+          .update({
+            total_amount: calculateTotal(),
+            advance_payment: Number(formData.advance_payment) || 0,
+            discount,
+            final_amount: finalAmount,
+            payment_method: paymentMethod,
+            mechanic_id: formData.mechanic_id || null,
+            commission_percent: commissionPercent || null,
+            commission_amount: commissionAmount || null,
+          })
           .eq('id', editingOrder.id);
-        updateError = fallback.error;
-        if (!updateError) {
-          showToast('Pagamento salvo sem campos de comissão. Execute a migration para habilitar o comissionamento.', 'warning');
+        if (e2) updateError = e2;
+      }
+
+      if (!updateError) {
+        const restPayload: Record<string, unknown> = {
+          customer_id: formData.customer_id,
+          vehicle_id: formData.vehicle_id,
+          notes: formData.notes ?? null,
+        };
+        const { error: e3 } = await supabase
+          .from('service_orders')
+          .update(restPayload)
+          .eq('id', editingOrder.id);
+        if (e3) updateError = e3;
+      }
+
+      // 2) Se deu 409 (ou qualquer erro no update), tentar RPC que contorna RLS
+      if (updateError) {
+        const is409 = String(updateError.code) === '409' || (updateError.message || '').includes('409') || (updateError.message || '').toLowerCase().includes('conflict');
+        const payload: Record<string, unknown> = {
+          status: 'delivered',
+          payment_status: 'paid',
+          total_amount: calculateTotal(),
+          advance_payment: Number(formData.advance_payment) || 0,
+          discount,
+          final_amount: finalAmount,
+          payment_method: paymentMethod,
+          mechanic_id: formData.mechanic_id || null,
+          commission_percent: commissionPercent || null,
+          commission_amount: commissionAmount || null,
+        };
+        const { error: rpcError } = await supabase.rpc('update_service_order_payment', {
+          p_id: editingOrder.id,
+          p_payload: payload,
+        });
+        if (!rpcError) {
+          updateError = null;
+        } else if (is409) {
+          console.warn('RPC update_service_order_payment falhou. Execute FIX_SERVICE_ORDER_409_RPC.sql no Supabase.', rpcError);
         }
       }
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('[Confirmar pagamento] Erro ao atualizar service_orders:', {
+          code: updateError.code,
+          message: updateError.message,
+          details: updateError.details,
+          hint: updateError.hint,
+        });
+        const msg = updateError.message || '';
+        if (String(updateError.code) === '409' || msg.includes('409') || msg.toLowerCase().includes('conflict')) {
+          showToast('Conflito ao atualizar a ordem. Verifique permissões (RLS) e se a ordem não foi alterada por outro usuário.', 'error');
+        } else {
+          showToast(msg || 'Erro ao confirmar pagamento', 'error');
+        }
+        throw updateError;
+      }
 
       // Deletar itens antigos e inserir novos
       await supabase
@@ -1068,14 +1044,18 @@ export default function ServiceOrders() {
                 .eq('id', item.product_id);
 
               // Registrar movimentação de estoque
+              const unitPrice = Number(item.cost_price || item.unit_price || 0);
               await supabase
                 .from('stock_movements')
                 .insert([{
                   product_id: item.product_id,
-                  type: 'out',
+                  movement_type: 'out',
                   quantity: item.quantity,
-                  reason: `Ordem de Serviço #${editingOrder.id.slice(0, 8)}`,
+                  unit_price: unitPrice,
+                  total_value: (item.total || item.quantity * item.unit_price) || 0,
+                  reason: `OS #${editingOrder.id.slice(0, 8)}`,
                   reference_id: editingOrder.id,
+                  reference_type: 'service_order',
                 }]);
             }
           }
@@ -1147,14 +1127,14 @@ export default function ServiceOrders() {
     setFormData({
       customer_id: order.customer_id,
       vehicle_id: order.vehicle_id,
-      mechanic_id: order.mechanic_id || '',
-      commission_percent: order.commission_percent || 0,
       status: order.status, // Agora vai carregar o status correto do banco (incluindo 'delivered')
       payment_status: order.payment_status,
       total_amount: order.total_amount,
       discount: order.discount || 0,
       advance_payment: order.advance_payment || 0,
       notes: order.notes || '',
+      mechanic_id: order.mechanic_id || '',
+      commission_percent: order.commission_percent ?? 0,
     });
     
     // Normalizar os itens para garantir que tenham a propriedade 'total'
@@ -1269,14 +1249,14 @@ export default function ServiceOrders() {
     setFormData({
       customer_id: '',
       vehicle_id: '',
-      mechanic_id: '',
-      commission_percent: 0,
       status: 'in_diagnosis',
       payment_status: 'pending',
       total_amount: 0,
       discount: 0,
       advance_payment: 0,
       notes: '',
+      mechanic_id: '',
+      commission_percent: 0,
     });
     setItems([]);
     setEditingOrder(null);
@@ -1450,113 +1430,6 @@ export default function ServiceOrders() {
     } catch (error) {
       console.error('Erro ao criar veículo:', error);
       showToast('Erro ao criar veículo', 'error');
-    }
-  };
-
-  const handleCreateMechanic = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!newMechanicForm.name || !newMechanicForm.phone) {
-      showToast('Preencha nome e telefone do mecânico', 'error');
-      return;
-    }
-
-    try {
-      const phoneDigits = newMechanicForm.phone.replace(/\D/g, '');
-      const syntheticEmail = `mechanic.${phoneDigits || Date.now()}.${Date.now()}@erp.local`;
-      const syntheticPassword = `mec_${Date.now()}`;
-
-      let { data, error } = await supabase
-        .from('system_users')
-        .insert([{
-          name: newMechanicForm.name.trim(),
-          email: syntheticEmail,
-          password: syntheticPassword,
-          role: 'mechanic',
-          permissions: ['service_orders', 'dashboard', 'reports'],
-          active: true,
-          contact_phone: newMechanicForm.phone.trim(),
-        }])
-        .select()
-        .single();
-
-      // Fallback para bases sem coluna contact_phone
-      if (error && (String(error.message || '').includes('contact_phone') || String(error.details || '').includes('contact_phone'))) {
-        const fallback = await supabase
-          .from('system_users')
-          .insert([{
-            name: newMechanicForm.name.trim(),
-            email: syntheticEmail,
-            password: syntheticPassword,
-            role: 'mechanic',
-            permissions: ['service_orders', 'dashboard', 'reports'],
-            active: true,
-          }])
-          .select()
-          .single();
-
-        data = fallback.data as any;
-        error = fallback.error;
-
-        if (!error) {
-          showToast('Mecânico criado. Para salvar telefone no banco, execute a migration de contact_phone.', 'warning');
-        }
-      }
-
-      if (error) throw error;
-
-      const createdMechanicId = data?.id;
-
-      setShowMechanicModal(false);
-      setNewMechanicForm({
-        name: '',
-        phone: '',
-      });
-
-      await loadMechanics();
-
-      if (createdMechanicId) {
-        setFormData((prev) => ({ ...prev, mechanic_id: createdMechanicId }));
-      }
-
-      showToast('Mecânico cadastrado com sucesso!', 'success');
-    } catch (error: any) {
-      console.error('Erro ao cadastrar mecânico:', error);
-      showToast(error?.message || 'Erro ao cadastrar mecânico', 'error');
-    }
-  };
-
-  const handleDeleteMechanic = async () => {
-    if (!formData.mechanic_id) {
-      showToast('Selecione um mecânico para excluir', 'warning');
-      return;
-    }
-
-    const mechanic = mechanics.find((m) => m.id === formData.mechanic_id);
-    const mechanicLabel = mechanic?.name || 'este mecânico';
-
-    const confirmed = confirm(
-      `Tem certeza que deseja excluir ${mechanicLabel}?\n\n` +
-      'Essa ação remove o mecânico da lista de cadastro.'
-    );
-    if (!confirmed) return;
-
-    try {
-      // Segurança extra: exclui somente usuários com role mechanic
-      const { error } = await supabase
-        .from('system_users')
-        .delete()
-        .eq('id', formData.mechanic_id)
-        .eq('role', 'mechanic');
-
-      if (error) throw error;
-
-      setFormData((prev) => ({ ...prev, mechanic_id: '' }));
-      await loadMechanics();
-      showToast('Mecânico excluído com sucesso!', 'success');
-    } catch (error: any) {
-      console.error('Erro ao excluir mecânico:', error);
-      showToast(error?.message || 'Erro ao excluir mecânico', 'error');
     }
   };
 
@@ -1861,7 +1734,6 @@ export default function ServiceOrders() {
       (order.customer?.phone || '').includes(searchTerm) ||
       (order.vehicle?.plate?.toLowerCase() || '').includes(searchLower) ||
       (order.vehicle?.model?.toLowerCase() || '').includes(searchLower) ||
-      (order.mechanic_name?.toLowerCase() || '').includes(searchLower) ||
       (order.id?.toLowerCase() || '').includes(searchLower);
 
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
@@ -1925,88 +1797,96 @@ export default function ServiceOrders() {
 
   const handleStatusChange = async (orderId: string, newStatus: string) => {
     try {
-      const { error } = await supabase
+      const order = serviceOrders.find(o => o.id === orderId);
+      // Primeiro update: só status (e payment_status se entregue) para evitar 409
+      const firstPayload: Record<string, unknown> = { status: newStatus };
+      if (newStatus === 'delivered' || newStatus === 'completed') {
+        firstPayload.payment_status = 'paid';
+      }
+
+      let { error } = await supabase
         .from('service_orders')
-        .update({ status: newStatus })
+        .update(firstPayload)
         .eq('id', orderId);
 
       if (error) throw error;
 
       // Se o status for "entregue" ou "concluído", criar venda automaticamente
-      if (newStatus === 'delivered' || newStatus === 'completed') {
-        const order = serviceOrders.find(o => o.id === orderId);
-        if (order && order.items && order.items.length > 0) {
-          // Verificar se já existe uma venda para esta OS
-          const { data: existingSale } = await supabase
-            .from('sales')
-            .select('id')
-            .eq('service_order_id', orderId)
-            .maybeSingle();
+      if ((newStatus === 'delivered' || newStatus === 'completed') && order && order.items && order.items.length > 0) {
+        // Verificar se já existe uma venda para esta OS
+        const { data: existingSale } = await supabase
+          .from('sales')
+          .select('id')
+          .eq('service_order_id', orderId)
+          .maybeSingle();
 
-          if (!existingSale) {
-            // Criar venda
-            const { data: saleData, error: saleError } = await supabase
-              .from('sales')
-              .insert({
-                customer_id: order.customer_id,
-                total_amount: order.total_amount,
-                payment_method: 'Dinheiro',
-                status: 'completed',
-                service_order_id: orderId,
-              })
-              .select()
+        if (!existingSale) {
+          // Criar venda
+          const { data: saleData, error: saleError } = await supabase
+            .from('sales')
+            .insert({
+              customer_id: order.customer_id,
+              total_amount: order.total_amount,
+              payment_method: 'Dinheiro',
+              status: 'completed',
+              service_order_id: orderId,
+            })
+            .select()
+            .single();
+
+          if (saleError) throw saleError;
+
+          // Criar itens da venda
+          const saleItems = order.items.map(item => ({
+            sale_id: saleData.id,
+            product_id: item.product_id,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            total_price: item.total_price,
+          }));
+
+          const { error: itemsError } = await supabase
+            .from('sale_items')
+            .insert(saleItems);
+
+          if (itemsError) throw itemsError;
+
+          // Atualizar estoque
+          for (const item of order.items) {
+            const { data: product } = await supabase
+              .from('products')
+              .select('stock_quantity')
+              .eq('id', item.product_id)
               .single();
 
-            if (saleError) throw saleError;
-
-            // Criar itens da venda
-            const saleItems = order.items.map(item => ({
-              sale_id: saleData.id,
-              product_id: item.product_id,
-              quantity: item.quantity,
-              unit_price: item.unit_price,
-              total_price: item.total_price,
-            }));
-
-            const { error: itemsError } = await supabase
-              .from('sale_items')
-              .insert(saleItems);
-
-            if (itemsError) throw itemsError;
-
-            // Atualizar estoque
-            for (const item of order.items) {
-              const { data: product } = await supabase
+            if (product) {
+              await supabase
                 .from('products')
-                .select('stock_quantity')
-                .eq('id', item.product_id)
-                .single();
+                .update({ stock_quantity: product.stock_quantity - item.quantity })
+                .eq('id', item.product_id);
 
-              if (product) {
-                await supabase
-                  .from('products')
-                  .update({ stock_quantity: product.stock_quantity - item.quantity })
-                  .eq('id', item.product_id);
-
-                // Registrar movimentação de estoque
-                await supabase
-                  .from('stock_movements')
-                  .insert({
-                    product_id: item.product_id,
-                    quantity: -item.quantity,
-                    type: 'sale',
-                    reference_id: saleData.id,
-                    notes: `Venda da OS #${orderId.slice(0, 8)}`,
-                  });
-              }
+              // Registrar movimentação de estoque
+              const unitPrice = Number(item.cost_price || item.unit_price || 0);
+              await supabase
+                .from('stock_movements')
+                .insert([{
+                  product_id: item.product_id,
+                  movement_type: 'out',
+                  quantity: item.quantity,
+                  unit_price: unitPrice,
+                  total_value: item.total || item.quantity * item.unit_price,
+                  reason: `Venda OS #${orderId.slice(0, 8)}`,
+                  reference_id: saleData.id,
+                  reference_type: 'sale',
+                }]);
             }
-          } else {
-            // Se já existe venda, apenas atualizar o service_order_id
-            await supabase
-              .from('sales')
-              .update({ service_order_id: orderId })
-              .eq('id', existingSale.id);
           }
+        } else {
+          // Se já existe venda, apenas atualizar o service_order_id
+          await supabase
+            .from('sales')
+            .update({ service_order_id: orderId })
+            .eq('id', existingSale.id);
         }
       }
 
@@ -2221,16 +2101,6 @@ export default function ServiceOrders() {
                       <div className="h-12 w-px bg-gray-200"></div>
 
                       <div className="flex flex-col">
-                        <span className="text-xs text-gray-500 mb-1">Mecânico</span>
-                        <span className="font-medium text-gray-900">{order.mechanic_name || 'Não atribuído'}</span>
-                        <span className="text-sm text-gray-600">
-                          Comissão: {Number(order.commission_percent || 0).toFixed(1)}%
-                        </span>
-                      </div>
-
-                      <div className="h-12 w-px bg-gray-200"></div>
-
-                      <div className="flex flex-col">
                         <span className="text-xs text-gray-500 mb-1">Status</span>
                         {getStatusBadge(order.status)}
                       </div>
@@ -2283,9 +2153,6 @@ export default function ServiceOrders() {
                             {order.vehicle?.model} {order.vehicle?.plate ? `• ${order.vehicle.plate}` : ''}
                           </div>
                         </div>
-                        <p className="text-xs text-gray-600">
-                          Mecânico: {order.mechanic_name || 'Não atribuído'} • Comissão: {Number(order.commission_percent || 0).toFixed(1)}%
-                        </p>
                       </div>
                     </div>
 
@@ -2489,70 +2356,40 @@ export default function ServiceOrders() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Mecânico Responsável</label>
-                  <div className="flex gap-2">
-                    <select
-                      value={formData.mechanic_id}
-                      onChange={(e) => {
-                        const selectedId = e.target.value;
-                        const selectedMechanic = mechanics.find((mechanic) => mechanic.id === selectedId);
-                        setFormData({
-                          ...formData,
-                          mechanic_id: selectedId,
-                          commission_percent: selectedMechanic ? Number(selectedMechanic.commission_percent || 0) : formData.commission_percent,
-                        });
-                      }}
-                      className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none cursor-pointer"
-                    >
-                      <option value="">Não atribuído</option>
-                      {mechanics.map((mechanic) => (
-                        <option key={mechanic.id} value={mechanic.id}>
-                        {mechanic.name}{mechanic.contact_phone ? ` - ${mechanic.contact_phone}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setShowMechanicModal(true)}
-                      className="px-4 py-3 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 transition cursor-pointer whitespace-nowrap"
-                      title="Cadastrar novo mecânico"
-                    >
-                      <i className="ri-add-line text-xl"></i>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDeleteMechanic}
-                      disabled={!formData.mechanic_id}
-                      className="px-4 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition cursor-pointer whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Excluir mecânico selecionado"
-                    >
-                      <i className="ri-delete-bin-line text-xl"></i>
-                    </button>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Mecânico responsável</label>
+                  <select
+                    value={formData.mechanic_id}
+                    onChange={(e) => setFormData({ ...formData, mechanic_id: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none cursor-pointer"
+                  >
+                    <option value="">Nenhum</option>
+                    {mechanics.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}{m.contact_phone ? ` – ${m.contact_phone}` : ''}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Comissão do Mecânico (%)</label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={formData.commission_percent || 0}
-                      onChange={(e) => {
-                        const value = parseFloat(e.target.value);
-                        const normalized = Number.isNaN(value) ? 0 : Math.max(0, Math.min(100, value));
-                        setFormData({ ...formData, commission_percent: normalized });
-                      }}
-                      className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
-                      placeholder="0,0"
-                    />
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500">%</span>
-                  </div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Comissão do mecânico (%)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={formData.commission_percent ?? 0}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      const n = Number.isNaN(v) ? 0 : Math.max(0, Math.min(100, v));
+                      setFormData({ ...formData, commission_percent: n });
+                    }}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent outline-none"
+                    placeholder="0"
+                  />
                   {formData.commission_percent > 0 && (
                     <p className="text-sm text-gray-600 mt-1">
-                      Comissão estimada: R$ {((calculateTotal() * formData.commission_percent) / 100).toFixed(2)}
+                      Comissão estimada: R$ {((calculateTotal() * (formData.commission_percent || 0)) / 100).toFixed(2)}
                     </p>
                   )}
                 </div>
@@ -3496,67 +3333,6 @@ export default function ServiceOrders() {
         </div>
       )}
 
-      {showMechanicModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-xl max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-gray-900">Novo Mecânico</h2>
-              <button
-                onClick={() => setShowMechanicModal(false)}
-                className="text-gray-400 hover:text-gray-600 transition cursor-pointer"
-              >
-                <i className="ri-close-line text-2xl"></i>
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateMechanic} className="p-6">
-              <div className="grid grid-cols-1 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Nome *</label>
-                  <input
-                    type="text"
-                    value={newMechanicForm.name}
-                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, name: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                    placeholder="Nome do mecânico"
-                    required
-                    autoFocus
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Telefone de Contato *</label>
-                  <input
-                    type="tel"
-                    value={newMechanicForm.phone}
-                    onChange={(e) => setNewMechanicForm({ ...newMechanicForm, phone: e.target.value })}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent outline-none"
-                    placeholder="(00) 00000-0000"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-4 mt-6">
-                <button
-                  type="button"
-                  onClick={() => setShowMechanicModal(false)}
-                  className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition cursor-pointer whitespace-nowrap"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-3 bg-teal-600 text-white rounded-lg hover:bg-teal-700 transition cursor-pointer whitespace-nowrap"
-                >
-                  Cadastrar Mecânico
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
       {/* Modal de Novo Produto */}
       {showNewProductModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
@@ -3933,19 +3709,27 @@ export default function ServiceOrders() {
                   <div className="flex items-center gap-2">
                     {getStatusBadge(selectedOrderForView.status)}
                   </div>
-                  <div className="mt-3 space-y-1 text-sm">
-                    <p>
-                      <span className="text-gray-600">Mecânico:</span>
-                      <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.mechanic_name || 'Não atribuído'}</span>
-                    </p>
-                    <p>
-                      <span className="text-gray-600">Comissão:</span>
-                      <span className="ml-2 font-medium text-gray-900">
-                        {Number(selectedOrderForView.commission_percent || 0).toFixed(1)}% (
-                        {`R$ ${Number(selectedOrderForView.commission_amount || 0).toFixed(2)}`})
-                      </span>
-                    </p>
-                  </div>
+                  {(selectedOrderForView.mechanic || selectedOrderForView.commission_percent != null) && (
+                    <div className="mt-3 space-y-1 text-sm">
+                      {selectedOrderForView.mechanic && (
+                        <p>
+                          <span className="text-gray-600">Mecânico:</span>
+                          <span className="ml-2 font-medium text-gray-900">{selectedOrderForView.mechanic.name}</span>
+                        </p>
+                      )}
+                      {(selectedOrderForView.commission_percent ?? 0) > 0 && (
+                        <p>
+                          <span className="text-gray-600">Comissão:</span>
+                          <span className="ml-2 font-medium text-gray-900">
+                            {Number(selectedOrderForView.commission_percent).toFixed(1)}%
+                            {selectedOrderForView.commission_amount != null && (
+                              <> (R$ {Number(selectedOrderForView.commission_amount).toFixed(2)})</>
+                            )}
+                          </span>
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-gray-50 rounded-lg p-4">

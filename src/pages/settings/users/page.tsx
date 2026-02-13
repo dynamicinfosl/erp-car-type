@@ -306,7 +306,6 @@ export default function UsersSettings() {
       admin: 'Administrador',
       operator: 'Operador',
       cashier: 'Caixa',
-      mechanic: 'Mecânico',
     };
     return labels[role] || role;
   };
@@ -317,7 +316,6 @@ export default function UsersSettings() {
       admin: 'bg-orange-100 text-orange-700',
       operator: 'bg-blue-100 text-blue-700',
       cashier: 'bg-gray-100 text-gray-700',
-      mechanic: 'bg-amber-100 text-amber-700',
     };
     return colors[role] || 'bg-gray-100 text-gray-700';
   };
@@ -490,7 +488,6 @@ export default function UsersSettings() {
                       {currentUser?.role === 'master' && <option value="admin">Administrador</option>}
                       <option value="operator">Operador</option>
                       <option value="cashier">Caixa</option>
-                      <option value="mechanic">Mecânico</option>
                     </select>
                   </div>
                 )}

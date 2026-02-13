@@ -108,20 +108,20 @@ export default function LoginPage() {
 
       if (authError) throw authError;
 
-      // 2. Buscar dados do usuário na tabela system_users com retry
+      // 2. Buscar dados do usuário na tabela system_users (maybeSingle evita 406 quando não há registro)
       const { data: userData, error: userError } = await retryRequest(
         () => supabase
           .from('system_users')
           .select('*')
           .eq('email', email)
-          .single(),
+          .maybeSingle(),
         3,
         1000
       );
 
-      if (userError) {
+      if (userError || !userData) {
         await supabase.auth.signOut();
-        throw new Error('Usuário não encontrado no sistema');
+        throw new Error('Usuário não encontrado no sistema. Cadastre em Configurações > Usuários ou execute ADD_USER_SYSTEM.sql no Supabase.');
       }
 
       // 3. Verificar se o usuário está ativo
